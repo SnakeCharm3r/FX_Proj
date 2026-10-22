@@ -1,5 +1,6 @@
 @extends('layouts.app')
 @section('title', 'Dashboard')
+@include('components.setup-card-styles')
 
 @section('content')
 
@@ -8,58 +9,7 @@
 
     {{-- Active Setup --}}
     <div class="col-12 col-xl-4">
-        <div class="card-panel h-100">
-            <div class="card-header-custom">
-                <span><i class="bi bi-lightning-charge-fill me-1" style="color:var(--gold)"></i>Active Setup</span>
-                <span class="signal-badge {{ $activeSetup ? strtolower($activeSetup->direction) : 'wait' }}" id="active-signal-badge">
-                    @if($activeSetup)
-                        <i class="bi bi-arrow-{{ $activeSetup->direction === 'BUY' ? 'up' : 'down' }}-circle-fill"></i> {{ $activeSetup->direction }}
-                    @else
-                        <i class="bi bi-hourglass-split"></i> Waiting
-                    @endif
-                </span>
-            </div>
-            <div class="p-3">
-                @if($activeSetup)
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="confluence-ring">
-                        <svg width="80" height="80" viewBox="0 0 80 80">
-                            <circle cx="40" cy="40" r="32" fill="none" stroke="var(--bg-panel)" stroke-width="7"/>
-                            <circle cx="40" cy="40" r="32" fill="none"
-                                stroke="{{ $activeSetup->direction === 'BUY' ? 'var(--green-bull)' : 'var(--red-bear)' }}"
-                                stroke-width="7"
-                                stroke-dasharray="{{ round($activeSetup->score / 100 * 201.1, 1) }} 201.1"
-                                stroke-linecap="round"/>
-                        </svg>
-                        <div class="score-text">
-                            <span style="color:{{ $activeSetup->direction === 'BUY' ? 'var(--green-bull)' : 'var(--red-bear)' }}">{{ $activeSetup->score }}%</span>
-                            <span>Score</span>
-                        </div>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <div class="row g-2">
-                            <div class="col-6"><div class="metric-pill"><div class="label">Entry</div><div class="value text-warning">{{ number_format($activeSetup->entry, 2) }}</div></div></div>
-                            <div class="col-6"><div class="metric-pill"><div class="label">Stop Loss</div><div class="value text-danger">{{ number_format($activeSetup->stop_loss, 2) }}</div></div></div>
-                            <div class="col-6"><div class="metric-pill"><div class="label">TP1</div><div class="value text-success">{{ number_format($activeSetup->tp1, 2) }}</div></div></div>
-                            <div class="col-6"><div class="metric-pill"><div class="label">TP2</div><div class="value text-success">{{ number_format($activeSetup->tp2, 2) }}</div></div></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="d-flex gap-2 flex-wrap" style="font-size:.72rem">
-                    <span class="badge" style="background:var(--bg-panel);color:#8d97b0;border:1px solid var(--bg-border)"><i class="bi bi-arrows-expand me-1"></i>Risk: {{ number_format(abs($activeSetup->entry - $activeSetup->stop_loss), 1) }} pts</span>
-                    <span class="badge" style="background:var(--bg-panel);color:#8d97b0;border:1px solid var(--bg-border)"><i class="bi bi-diagram-3 me-1"></i>RR: {{ number_format(abs($activeSetup->tp1 - $activeSetup->entry) / max(0.01, abs($activeSetup->entry - $activeSetup->stop_loss)), 1) }}:1</span>
-                    <span class="badge" style="background:var(--bg-panel);color:#8d97b0;border:1px solid var(--bg-border)"><i class="bi bi-clock me-1"></i>{{ $activeSetup->created_at->diffForHumans() }}</span>
-                    <span class="badge" style="background:var(--bg-panel);color:#8d97b0;border:1px solid var(--bg-border)"><i class="bi bi-bar-chart me-1"></i>{{ strtoupper($activeSetup->timeframe) }}</span>
-                </div>
-                @else
-                <div class="text-center py-4" style="color:var(--text-muted-custom)">
-                    <i class="bi bi-radar fs-2 d-block mb-2" style="color:var(--gold);opacity:.4"></i>
-                    <div style="font-size:.85rem">No active setup</div>
-                    <div style="font-size:.72rem;margin-top:.25rem">Engine is scanning orderflow…</div>
-                </div>
-                @endif
-            </div>
-        </div>
+        @include('components.setup-card', ['setupCardTitle' => request()->filled('setup_id') ? 'Selected setup #'.$activeSetup?->id : 'Active Setup'])
     </div>
 
     {{-- Orderflow Metrics --}}
@@ -77,12 +27,13 @@
                             ['id'=>'m-delta',      'label'=>'Bar Delta',      'val'=>$metrics['delta']??'—',            'color'=>($metrics['delta']??0)>=0?'var(--green-bull)':'var(--red-bear)'],
                             ['id'=>'m-buy-vol',    'label'=>'Buy Vol',        'val'=>$metrics['buy_volume']??'—',       'color'=>'var(--green-bull)'],
                             ['id'=>'m-sell-vol',   'label'=>'Sell Vol',       'val'=>$metrics['sell_volume']??'—',      'color'=>'var(--red-bear)'],
-                            ['id'=>'m-absorption', 'label'=>'Absorption',     'val'=>$metrics['absorption']??'—',       'color'=>'var(--gold)'],
-                            ['id'=>'m-imbalance',  'label'=>'Imbalance',      'val'=>$metrics['imbalance']??'—',        'color'=>'var(--gold)'],
-                            ['id'=>'m-poc',        'label'=>'POC',            'val'=>$metrics['poc']??'—',              'color'=>'var(--gold)'],
-                            ['id'=>'m-vwap',       'label'=>'VWAP',           'val'=>$metrics['vwap']??'—',             'color'=>'#a78bfa'],
-                            ['id'=>'m-exhaustion', 'label'=>'Exhaustion',     'val'=>$metrics['exhaustion']??'NONE',    'color'=>'var(--text-muted-custom)'],
-                            ['id'=>'m-stacked',    'label'=>'Stacked Imb',    'val'=>$metrics['stacked_imbalance']??'NO','color'=>'var(--text-muted-custom)'],
+                            ['id'=>'m-absorption', 'label'=>'Absorption sequence','val'=>$metrics['absorption']??'—',       'color'=>'var(--gold)'],
+                            ['id'=>'m-imbalance',  'label'=>'Bar vol ratio',  'val'=>$metrics['imbalance']??'—',        'color'=>'var(--gold)'],
+                            ['id'=>'m-poc',        'label'=>'POC proxy · 20 bars','val'=>$metrics['poc']??'—',           'color'=>'var(--gold)'],
+                            ['id'=>'m-vwap',       'label'=>'VWAP proxy · 20 bars','val'=>$metrics['vwap']??'—',        'color'=>'#a78bfa'],
+                            ['id'=>'m-exhaustion', 'label'=>'Exhaustion proxy','val'=>$metrics['exhaustion']??'NONE',    'color'=>'var(--text-muted-custom)'],
+                            ['id'=>'m-stacked',    'label'=>'Stack (closed)', 'val'=>'—',                              'color'=>'var(--text-muted-custom)'],
+                            ['id'=>'m-participation','label'=>'Participation · closed','val'=>isset($metrics['participation_ratio']) ? ($metrics['participation_state'].' '.number_format($metrics['participation_ratio'],2).'×') : '—','color'=>'var(--gold)'],
                         ];
                     @endphp
                     @foreach($metricDefs as $m)
@@ -114,10 +65,10 @@
                 <span><i class="bi bi-graph-up me-1" style="color:var(--gold)"></i>XAUUSD Chart</span>
                 <div class="d-flex align-items-center gap-2">
                     <div class="btn-group btn-group-sm" id="tf-buttons">
-                        @foreach(['5m','15m','30m','1h','4h'] as $tf)
+                        @foreach(['1m','5m','15m','30m','1h','4h','1d'] as $tf)
                         <button type="button" onclick="switchTimeframe('{{ $tf }}')"
-                                class="btn btn-sm {{ $tf==='15m'?'active':'' }}"
-                                style="background:var(--bg-panel);border-color:var(--bg-border);color:{{ $tf==='15m'?'var(--gold)':'#8d97b0' }};font-size:.7rem;padding:.2rem .55rem">{{ $tf }}</button>
+                                class="btn btn-sm {{ $tf===$initialTimeframe?'active':'' }}"
+                                style="background:var(--bg-panel);border-color:var(--bg-border);color:{{ $tf===$initialTimeframe?'var(--gold)':'#8d97b0' }};font-size:.7rem;padding:.2rem .55rem">{{ $tf }}</button>
                         @endforeach
                     </div>
                     <select id="chart-type" onchange="switchChartType(this.value)"
@@ -127,17 +78,21 @@
                         <option value="bar">OHLC Bars</option>
                         <option value="area">Area</option>
                     </select>
+                    <a class="btn btn-sm btn-outline-warning" href="{{ route('orderflow.footprint') }}" onclick="this.href='/orderflow/footprint?tf='+currentTf">Footprint</a>
                 </div>
             </div>
-            <div style="position:relative">
+            <div style="position:relative" id="price-chart-wrap">
                 <div id="tv-chart" style="height:380px;width:100%"></div>
+                <svg id="sd-zone-overlay" role="img" aria-label="1H demand and supply zones" style="position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none"></svg>
                 <div id="chart-legend" style="position:absolute;top:8px;left:12px;z-index:10;font-size:.72rem;font-family:'JetBrains Mono',monospace;pointer-events:none">
-                    <div><span style="color:#8d97b0">XAUUSD &bull; <span id="legend-tf">15m</span></span>
+                    <div><span style="color:#8d97b0">XAUUSD &bull; <span id="legend-tf">{{ $initialTimeframe }}</span></span>
                     <span id="legend-ohlc" style="color:#aaa;margin-left:.5rem"></span></div>
                     <div id="chart-stats" style="margin-top:.2rem;font-size:.65rem"></div>
+                    <div id="chart-update-status" style="margin-top:.2rem;font-size:.65rem;color:#8d97b0">Loading chart…</div>
                 </div>
             </div>
             <div id="volume-chart" style="height:80px;border-top:1px solid var(--bg-border)"></div>
+            @include('dashboard.price-zones')
         </div>
     </div>
 
@@ -146,9 +101,9 @@
         <div class="card-panel h-100">
             <div class="card-header-custom">
                 <span><i class="bi bi-puzzle-fill me-1" style="color:var(--gold)"></i>Confluence Signals</span>
-                <span style="font-size:.65rem" id="conf-timeframe">15m</span>
+                <span style="font-size:.65rem" id="conf-timeframe">{{ $initialTimeframe }}</span>
             </div>
-            <div class="p-3">
+            <div class="p-3" id="confluence-signals">
                 @foreach($confluenceSignals as $sig)
                 <div class="d-flex align-items-center justify-content-between py-2"
                      style="border-bottom:1px solid {{ $loop->last?'transparent':'var(--bg-border)' }}">
@@ -187,11 +142,11 @@
             </div>
             <div style="overflow-x:auto">
                 <table class="table table-dark table-hover of-table mb-0">
-                    <thead><tr><th>Time</th><th>Open</th><th>Close</th><th>Delta</th><th>Buy Vol</th><th>Sell Vol</th><th>Imbalance</th><th>Signal</th></tr></thead>
+                    <thead><tr><th>Time UTC</th><th>Open</th><th>Close</th><th>Delta</th><th>Buy Vol</th><th>Sell Vol</th><th>Bar vol ratio</th><th>Saved setup</th></tr></thead>
                     <tbody id="of-table-body">
                         @forelse($recentBars as $bar)
                         <tr>
-                            <td style="color:#8d97b0">{{ $bar['time'] ?? '—' }}</td>
+                            <td style="color:#8d97b0">{{ isset($bar['time']) ? gmdate('d M H:i', $bar['time']) : '—' }}</td>
                             <td>{{ number_format($bar['open'] ?? 0, 2) }}</td>
                             <td style="color:{{ ($bar['close']??0) >= ($bar['open']??0) ? 'var(--green-bull)' : 'var(--red-bear)' }}">{{ number_format($bar['close'] ?? 0, 2) }}</td>
                             <td style="color:{{ ($bar['delta']??0) >= 0 ? 'var(--green-bull)' : 'var(--red-bear)' }}">{{ ($bar['delta']??0) >= 0 ? '+' : '' }}{{ $bar['delta'] ?? 0 }}</td>
@@ -200,12 +155,12 @@
                             <td>
                                 @if(($bar['imbalance']??'') === 'BULLISH') <span style="color:var(--green-bull);font-size:.7rem">▲ BULL</span>
                                 @elseif(($bar['imbalance']??'') === 'BEARISH') <span style="color:var(--red-bear);font-size:.7rem">▼ BEAR</span>
-                                @else <span style="color:#555;font-size:.7rem">—</span>
+                                @else <span style="color:var(--text-muted-custom);font-size:.7rem">Neutral</span>
                                 @endif
                             </td>
                             <td>
                                 @if(!empty($bar['signal'])) <span class="signal-badge {{ strtolower($bar['signal']) }}" style="font-size:.62rem;padding:.15rem .4rem">{{ $bar['signal'] }}</span>
-                                @else <span style="color:#555">—</span>
+                                @else <span style="color:var(--text-muted-custom);font-size:.7rem">{{ ($bar['closed'] ?? false) ? 'No setup' : 'Developing' }}</span>
                                 @endif
                             </td>
                         </tr>
@@ -254,7 +209,55 @@
 @push('scripts')
 <script>
 let candleSeries, volumeSeries, mainChart, volChart;
-let currentTf = '15m';
+let currentTf = @json($initialTimeframe);
+window.GFTimeframe = currentTf;
+window.GFFollowActiveFeed = @json(!request()->filled('setup_id'));
+let chartType = 'candlestick', chartLoadSequence = 0, chartLoadedTf = null;
+let priceZoneOverlay = null, latestChartCandles = [];
+let targetPollPending = false;
+const focusedChartSetup = @json($focusedChartData);
+function addFocusedSetupLevels() {
+    if (!focusedChartSetup) return;
+    for (const [key, label, color] of [['entry','Entry','#f5c842'], ['stop_loss','SL','#ff637d'], ['tp1','TP1','#00c076'], ['tp2','TP2','#00c076']]) {
+        candleSeries.createPriceLine({price:Number(focusedChartSetup[key]),color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'#'+focusedChartSetup.id+' '+label});
+    }
+}
+
+async function pollSetupTargets() {
+    const id = document.getElementById('active-setup-panel')?.dataset.setupId;
+    if (!id || targetPollPending) return;
+    targetPollPending = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+        const response = await fetch('/api/setups/' + encodeURIComponent(id), {cache:'no-store',signal:controller.signal});
+        if (!response.ok) throw new Error('Setup unavailable');
+        const setup = await response.json();
+        if (String(setup.id) !== id) return;
+        for (const target of ['tp1', 'tp2']) {
+            const card = document.getElementById(target + '-card'), observed = setup[target + '_hit_at'];
+            if (!card || !observed) continue;
+            // A recorded touch remains lit even after price retraces.
+            card.classList.add('tp-hit'); card.querySelector('.tp-led').hidden = false;
+            document.getElementById(target + '-hit-label').hidden = false;
+            card.setAttribute('aria-label', target.toUpperCase() + ' price reached');
+            card.title = 'Price reached; observed ' + new Date(observed).toISOString().replace('T',' ').slice(0,19) + ' UTC. This records a price touch.';
+        }
+        const stopCard = document.getElementById('sl-card');
+        if (stopCard && setup.sl_hit_at) {
+            stopCard.classList.add('sl-hit');stopCard.setAttribute('aria-label','SL price reached');
+            document.getElementById('sl-hit-label').hidden = false;
+        }
+        const tracking = document.getElementById('exit-tracking-status');
+        const trackingMessages = {sl:'SL price reached. Further target tracking has ended.',tp2:'TP2 price reached. Price tracking is complete.',
+            ambiguous:'Stop and target crossed in one candle. First touch is unresolved; further exit tracking is paused.'};
+        if (tracking && trackingMessages[setup.exit_tracking_state]) {
+            tracking.hidden = false;tracking.textContent = trackingMessages[setup.exit_tracking_state];
+        }
+    } catch (_) {
+        // Keep confirmed hits visible; retry without inventing target results.
+    } finally { clearTimeout(timeout); targetPollPending = false; }
+}
+setInterval(pollSetupTargets, 10000); pollSetupTargets();
 
 function initCharts() {
     const opts = {
@@ -270,8 +273,9 @@ function initCharts() {
         borderUpColor: '#00c076', borderDownColor: '#ff3b5c',
         wickUpColor: 'rgba(0,192,118,.6)', wickDownColor: 'rgba(255,59,92,.6)',
     });
-    window.vwapSeries = mainChart.addLineSeries({ color: '#a78bfa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'VWAP' });
-    window.pocSeries  = mainChart.addLineSeries({ color: '#f5c842', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: 'POC' });
+    addFocusedSetupLevels();
+    window.vwapSeries = mainChart.addLineSeries({ color: '#a78bfa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'VWAP proxy (20)' });
+    window.pocSeries  = mainChart.addLineSeries({ color: '#f5c842', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: 'POC proxy (20)' });
 
     volChart = LightweightCharts.createChart(document.getElementById('volume-chart'), { ...opts, height: 80 });
     volumeSeries = volChart.addHistogramSeries({ color: 'rgba(245,200,66,.4)', priceFormat: { type: 'volume' }, priceScaleId: '' });
@@ -279,6 +283,8 @@ function initCharts() {
 
     mainChart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) volChart.timeScale().setVisibleLogicalRange(r); });
     volChart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) mainChart.timeScale().setVisibleLogicalRange(r); });
+    priceZoneOverlay = GFPriceZones.mount(mainChart, () => candleSeries, () => latestChartCandles,
+        () => ({'1m':60,'5m':300,'15m':900,'30m':1800,'1h':3600,'4h':14400,'1d':86400}[currentTf]));
 
     mainChart.subscribeCrosshairMove(param => {
         if (!param.time || !param.seriesData.size) return;
@@ -287,13 +293,24 @@ function initCharts() {
     });
 
     loadChartData(currentTf);
+    setInterval(() => loadChartData(currentTf), 10000);
+    new ResizeObserver(() => {
+        mainChart.resize(document.getElementById('tv-chart').clientWidth, 380);
+        volChart.resize(document.getElementById('volume-chart').clientWidth, 80);
+    }).observe(document.getElementById('tv-chart'));
 }
 
 function loadChartData(tf) {
-    fetch(`/api/chart-data?tf=${tf}`)
-        .then(r => r.json())
+    if (!candleSeries || !volumeSeries) return;
+    const sequence = ++chartLoadSequence;
+    const followLatest = mainChart.timeScale().scrollPosition() < 2;
+    fetch(`/api/chart-data?tf=${tf}`, {cache: 'no-store'})
+        .then(r => { if (!r.ok) throw new Error('Chart request failed'); return r.json(); })
         .then(d => {
-            if (d.candles)  candleSeries.setData(d.candles);
+            if (sequence !== chartLoadSequence || tf !== currentTf) return;
+            latestChartCandles = d.candles || [];
+            if (d.candles) candleSeries.setData(chartType === 'area'
+                ? d.candles.map(b => ({time: b.time, value: b.close})) : d.candles);
             if (d.volume)   volumeSeries.setData(d.volume);
             if (d.vwap)     vwapSeries.setData(d.vwap);
             if (d.poc)      pocSeries.setData(d.poc);
@@ -305,22 +322,49 @@ function loadChartData(tf) {
                 position: s.direction === 'BUY' ? 'belowBar' : 'aboveBar',
                 color:    s.direction === 'BUY' ? '#00c076' : '#ff3b5c',
                 shape:    s.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
-                text:     `${s.direction} ${s.score}%`,
+                text:     `${s.direction} ${s.strategy === 'h1_trend_range_v3' ? 'H1 ' : ''}${s.score}%`,
             }));
             const allMarkers = [...hvMarkers, ...setupMarkers]
                 .sort((a, b) => a.time - b.time);
             candleSeries.setMarkers(allMarkers);
+            if (d.candles?.length) {
+                if (chartLoadedTf !== tf) mainChart.timeScale().fitContent();
+                else if (followLatest) mainChart.timeScale().scrollToRealTime();
+                chartLoadedTf = tf;
+                const last = d.candles[d.candles.length - 1];
+                document.getElementById('legend-ohlc').textContent = `O:${last.open.toFixed(2)} H:${last.high.toFixed(2)} L:${last.low.toFixed(2)} C:${last.close.toFixed(2)}`;
+                const time = new Date(last.time * 1000).toISOString().slice(11,16) + ' UTC';
+                document.getElementById('chart-update-status').textContent = d.stats?.last_bar_closed === false
+                    ? `Developing candle ${time} · refreshes every 10s`
+                    : `Latest completed candle ${time} · refreshes every 10s`;
+                if (tf === '1h' && d.stats?.candle_source === 'aggregated_15m') {
+                    document.getElementById('chart-update-status').textContent += ' · H1 built from M15';
+                }
+            } else {
+                document.getElementById('chart-update-status').textContent = `No ${tf} bars received. Attach the bridge to an MT5 ${tf} chart.`;
+            }
+            priceZoneOverlay?.draw();
 
             // Update chart stats legend
             if (d.stats) {
                 const statsEl = document.getElementById('chart-stats');
                 if (statsEl) statsEl.innerHTML =
-                    `<span style="color:#8d97b0">POC: <b style="color:#f5c842">${d.stats.poc_price?.toFixed(2)}</b></span>` +
+                    `<span style="color:#8d97b0">POC proxy (20): <b style="color:#f5c842">${d.stats.poc_price?.toFixed(2) ?? '—'}</b></span>` +
+                    `<span style="color:#8d97b0;margin-left:.75rem">VWAP proxy (20): <b style="color:#a78bfa">${d.stats.vwap_price?.toFixed(2) ?? '—'}</b></span>` +
                     `<span style="color:#8d97b0;margin-left:.75rem">Avg Vol: <b style="color:#a78bfa">${Number(d.stats.avg_volume).toLocaleString()}</b></span>` +
                     `<span style="color:#8d97b0;margin-left:.75rem"><b style="color:#00c076">■</b>/<b style="color:#ff3b5c">■</b> = High Vol bar</span>`;
+            } else {
+                document.getElementById('chart-stats').textContent = 'VWAP / POC unavailable for this timeframe';
             }
         })
-        .catch(() => seedDemoChart());
+        .catch(() => {
+            if (sequence !== chartLoadSequence || tf !== currentTf) return;
+            @if(config('orderflow.connector') === 'clusterdelta')
+            document.getElementById('chart-update-status').textContent = 'Chart refresh failed · retrying in 10s';
+            @else
+            seedDemoChart();
+            @endif
+        });
 }
 
 function seedDemoChart() {
@@ -369,8 +413,11 @@ function seedDemoChart() {
 
 document.addEventListener('DOMContentLoaded', initCharts);
 
-function switchTimeframe(tf) {
+function switchTimeframe(tf, automatic = false) {
+    latestChartCandles = []; priceZoneOverlay?.draw();
     currentTf = tf;
+    window.GFTimeframe = tf;
+    if (!automatic) window.GFFollowActiveFeed = false;
     document.getElementById('legend-tf').textContent = tf;
     document.getElementById('conf-timeframe').textContent = tf;
     document.querySelectorAll('#tf-buttons .btn').forEach(b => {
@@ -379,33 +426,95 @@ function switchTimeframe(tf) {
         b.style.borderColor = active ? 'var(--gold)' : 'var(--bg-border)';
     });
     loadChartData(tf);
+    if (typeof pollConfluence === 'function') pollConfluence();
 }
 
 function switchChartType(type) {
+    chartType = type;
     mainChart.removeSeries(candleSeries);
     if (type === 'candlestick') candleSeries = mainChart.addCandlestickSeries({ upColor:'#00c076', downColor:'#ff3b5c', borderUpColor:'#00c076', borderDownColor:'#ff3b5c' });
     else if (type === 'bar')    candleSeries = mainChart.addBarSeries({ upColor:'#00c076', downColor:'#ff3b5c' });
     else                        candleSeries = mainChart.addAreaSeries({ lineColor:'#f5c842', topColor:'rgba(245,200,66,.2)', bottomColor:'transparent' });
+    addFocusedSetupLevels();
     loadChartData(currentTf);
 }
 
-Echo.channel('xauusd.metrics').listen('.metrics.updated', (e) => {
-    const m = e.metrics;
+function updateMarketMetrics(m) {
     const upd = (id, val, colorFn) => { const el = document.getElementById(id); if (el) { el.textContent = val; if (colorFn) el.style.color = colorFn(val); } };
     upd('m-cvd',        m.cvd,        v => v >= 0 ? '#00c076' : '#ff3b5c');
     upd('m-delta',      (m.delta>=0?'+':'')+m.delta, v => parseFloat(v)>=0?'#00c076':'#ff3b5c');
     upd('m-buy-vol',    m.buy_volume,  null);
     upd('m-sell-vol',   m.sell_volume, null);
-    upd('m-absorption', m.absorption,  v => v==='BULL'?'#00c076':(v==='BEAR'?'#ff3b5c':'var(--gold)'));
+    upd('m-absorption', m.absorption,  v => v==='BULL_ABSORPTION'?'#00c076':(v==='BEAR_ABSORPTION'?'#ff3b5c':'var(--text-muted-custom)'));
     upd('m-imbalance',  m.imbalance,   v => v==='BULLISH'?'#00c076':(v==='BEARISH'?'#ff3b5c':'var(--gold)'));
     upd('m-poc',        m.poc,         null);
     upd('m-vwap',       m.vwap,        null);
-    upd('m-exhaustion', m.exhaustion,  v => v!=='NONE'?'#ff3b5c':'var(--text-muted-custom)');
-    upd('m-stacked',    m.stacked_imbalance, v => v!=='NO'?'var(--gold)':'var(--text-muted-custom)');
+    upd('m-exhaustion', m.exhaustion,  v => v==='BULLISH_EXHAUSTION'?'#00c076':(v==='BEARISH_EXHAUSTION'?'#ff3b5c':'var(--text-muted-custom)'));
+    const participation = m.participation_ratio == null ? '—' : `${m.participation_state} ${Number(m.participation_ratio).toFixed(2)}×`;
+    upd('m-participation', participation, v => v.startsWith('INCREASED')?'#f5c842':(v.startsWith('DECREASED')?'#8d97b0':'#c4ccdb'));
     const b = (id,w) => { const el=document.getElementById(id); if(el) el.style.width=Math.min(100,w||0)+'%'; };
     b('m-buy-vol-bar', m.buy_pct); b('m-sell-vol-bar', m.sell_pct); b('m-cvd-bar', Math.abs(m.cvd_pct||0));
     document.getElementById('metrics-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+@if(config('orderflow.connector') === 'clusterdelta')
+let confluencePending = false;
+async function pollConfluence() {
+    if (confluencePending) return;
+    confluencePending = true;
+    const tf = currentTf, controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 8000);
+    const container = document.getElementById('confluence-signals');
+    try {
+        const response = await fetch('/api/setups/status', {cache:'no-store',signal:controller.signal});
+        if (!response.ok) throw new Error('Evaluation unavailable');
+        const data = await response.json(); if (tf !== currentTf) return;
+        const state = data.timeframes.find(row => row.timeframe === tf);
+        container.replaceChildren();
+        document.getElementById('conf-timeframe').textContent = tf + ' · closed candle';
+        const summary = document.createElement('div'); summary.className = 'small mb-2'; summary.style.color = 'var(--text-muted-custom)';
+        summary.textContent = state?.reason || 'Waiting for detector evaluation'; container.appendChild(summary);
+        const signals = state?.engine_fresh ? state.signals || [] : [];
+        const stack = signals.find(signal => signal.key === 'stacked_imbalance');
+        const stackMetric = document.getElementById('m-stacked');
+        stackMetric.textContent = stack ? (stack.status === 'neutral' ? 'NONE' : stack.status.toUpperCase()) : '—';
+        stackMetric.style.color = stack?.status === 'bullish' ? 'var(--green-bull)' : stack?.status === 'bearish' ? 'var(--red-bear)' : 'var(--text-muted-custom)';
+        for (const signal of signals) {
+            const row = document.createElement('div'); row.className = 'py-2'; row.style.borderTop = '1px solid var(--bg-border)';
+            const label = document.createElement('div'); label.style.fontSize = '.78rem';
+            label.style.color = signal.status === 'bullish' ? 'var(--green-bull)' : signal.status === 'bearish' ? 'var(--red-bear)' : '#c4ccdb';
+            label.textContent = signal.name + ' · ' + (signal.available === false ? 'UNAVAILABLE' : signal.status.toUpperCase()) + ' · ' + signal.weight + ' pts';
+            const detail = document.createElement('div'); detail.style.cssText = 'font-size:.68rem;color:var(--text-muted-custom)'; detail.textContent = signal.detail;
+            row.append(label, detail); container.appendChild(row);
+        }
+    } catch (_) {
+        if (tf === currentTf) {
+            container.textContent = 'Cannot verify setup conditions. Retrying in 10 seconds.';
+            document.getElementById('m-stacked').textContent = '—';
+        }
+    } finally { clearTimeout(timeout); confluencePending = false; if (tf !== currentTf) pollConfluence(); }
+}
+setInterval(pollConfluence, 10000); pollConfluence();
+window.addEventListener('clusterdelta-metrics', e => {
+    const feed = e.detail;
+    if (window.GFFollowActiveFeed && feed.timeframe && feed.timeframe !== currentTf) switchTimeframe(feed.timeframe, true);
+    if (feed.timeframe && feed.timeframe !== currentTf) return;
+    if (feed.metrics) updateMarketMetrics(feed.metrics);
+    else {
+        ['m-cvd','m-delta','m-buy-vol','m-sell-vol','m-absorption','m-imbalance','m-poc','m-vwap','m-exhaustion','m-stacked','m-participation'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '—';
+        });
+        ['m-buy-vol-bar','m-sell-vol-bar','m-cvd-bar'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.width = '0%';
+        });
+    }
+    document.getElementById('metrics-updated').textContent = feed.last_received
+        ? (feed.connected ? 'Data received ' : 'Feed stale · last received ') + new Date(feed.last_received * 1000).toLocaleTimeString()
+        : `No ${currentTf} market data received · check the bridge timeframe`;
 });
+@else
+Echo.channel('xauusd.metrics').listen('.metrics.updated', e => updateMarketMetrics(e.metrics));
+@endif
 
 Echo.channel('xauusd.candles').listen('.candle.closed', (e) => {
     if (e.tf === currentTf) { candleSeries.update(e.candle); volumeSeries.update(e.volume); }

@@ -138,6 +138,10 @@ def main():
     parser.add_argument("--sim", action="store_true", help="Run with simulated ticks (no cTrader API needed)")
     args = parser.parse_args()
 
+    if not args.sim and os.getenv("ORDERFLOW_CONNECTOR", "clusterdelta") != "ctrader":
+        logger.info("cTrader ingestion disabled: ClusterDelta data arrives through the MT5 bridge.")
+        return
+
     timeframes = get_timeframes()
     logger.info(f"GoldFlow Pro ingestion starting | timeframes: {timeframes}")
 

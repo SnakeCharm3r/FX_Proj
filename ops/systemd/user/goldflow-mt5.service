@@ -1,0 +1,21 @@
+[Unit]
+Description=GoldFlow Pro MetaTrader 5 Wine session
+PartOf=graphical-session.target
+ConditionEnvironment=DISPLAY
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=/home/simon/.mt5/drive_c/Program Files/MetaTrader 5
+Environment=WINEPREFIX=/home/simon/.mt5
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/flock --no-fork -n %t/goldflow-mt5.lock /usr/bin/python3 /var/www/FX_Proj/ops/goldflow/run-mt5.py
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

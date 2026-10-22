@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GoldFlow Pro background services and MT5
+Comment=Start the GoldFlow data stack and the existing Wine MT5 profile
+Exec=/var/www/FX_Proj/ops/goldflow/desktop-session.sh
+Terminal=false
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=10

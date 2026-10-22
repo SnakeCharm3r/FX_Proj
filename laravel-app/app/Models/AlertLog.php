@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class AlertLog extends Model
 {
     protected $fillable = [
-        'setup_id', 'channel', 'type', 'message', 'status', 'error',
+        'setup_id', 'channel', 'type', 'message', 'status', 'error', 'price_zone_id', 'zone_entry',
     ];
 
     public function setup(): BelongsTo

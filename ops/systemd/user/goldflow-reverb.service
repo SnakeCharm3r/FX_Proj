@@ -1,0 +1,16 @@
+[Unit]
+Description=GoldFlow Pro WebSocket server
+PartOf=goldflow.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=/var/www/FX_Proj/laravel-app
+Environment=PATH=/opt/lampp/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/flock --no-fork -n /var/www/FX_Proj/laravel-app/storage/framework/reverb-server.lock /opt/lampp/bin/php artisan reverb:start --host=127.0.0.1 --port=8080
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal

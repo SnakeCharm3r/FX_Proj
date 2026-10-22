@@ -1,0 +1,18 @@
+[Unit]
+Description=GoldFlow Pro setup history and TP/SL watcher
+Wants=goldflow-web.service goldflow-forwarder.service
+After=goldflow-web.service goldflow-forwarder.service
+PartOf=goldflow.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=/var/www/FX_Proj/laravel-app
+Environment=PATH=/opt/lampp/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/flock --no-fork -n /var/www/FX_Proj/laravel-app/storage/framework/orderflow-watch.lock /opt/lampp/bin/php artisan orderflow:watch
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal

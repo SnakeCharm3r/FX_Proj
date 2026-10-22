@@ -102,17 +102,24 @@
     <div class="brand">
         <span class="logo-text"><i class="bi bi-bar-chart-fill me-1" style="color:var(--gold)"></i> GoldFlow Pro</span>
         <small>XAUUSD Orderflow Engine</small>
+        @if(config('orderflow.connector') === 'clusterdelta')
+        <small>ClusterDelta {{ config('clusterdelta.instrument') }} · MT5 prices</small>
+        @endif
     </div>
     <nav class="mt-2">
         <div class="sidebar-section">Analysis</div>
         <a href="{{ route('dashboard') }}"       class="{{ request()->routeIs('dashboard')       ? 'active':'' }}"><i class="bi bi-speedometer2"></i> Dashboard</a>
-        <a href="{{ route('setups.index') }}"    class="{{ request()->routeIs('setups.*')        ? 'active':'' }}"><i class="bi bi-lightning-charge-fill"></i> Setups</a>
+        <a href="{{ route('zones.index') }}" class="{{ request()->routeIs('zones.index')?'active':'' }}"><i class="bi bi-bounding-box"></i> H1 Zone Monitor</a>
+        <a href="{{ route('setups.index') }}"    class="{{ request()->routeIs('setups.index','setups.show','setups.observation') ? 'active':'' }}"><i class="bi bi-lightning-charge-fill"></i> Setups</a>
+        <a href="{{ route('setups.tester') }}"   class="{{ request()->routeIs('setups.tester') ? 'active':'' }}"><i class="bi bi-clipboard-data"></i> Strategy Tester</a>
         <a href="{{ route('signals.index') }}"   class="{{ request()->routeIs('signals.*')       ? 'active':'' }}"><i class="bi bi-activity"></i> Signal History</a>
         <div class="sidebar-section mt-2">Orderflow</div>
+        <a href="{{ route('orderflow.footprint') }}" class="{{ request()->routeIs('orderflow.footprint') ? 'active':'' }}"><i class="bi bi-grid-3x3"></i> Footprint</a>
         <a href="{{ route('orderflow.delta') }}"     class="{{ request()->routeIs('orderflow.delta')     ? 'active':'' }}"><i class="bi bi-arrow-left-right"></i> Delta Analysis</a>
         <a href="{{ route('orderflow.imbalance') }}" class="{{ request()->routeIs('orderflow.imbalance') ? 'active':'' }}"><i class="bi bi-layers-fill"></i> Imbalance Zones</a>
         <a href="{{ route('orderflow.cvd') }}"       class="{{ request()->routeIs('orderflow.cvd')       ? 'active':'' }}"><i class="bi bi-graph-up-arrow"></i> CVD</a>
         <div class="sidebar-section mt-2">System</div>
+        <a href="{{ route('monitor.index') }}" class="{{ request()->routeIs('monitor.index') ? 'active':'' }}"><i class="bi bi-pc-display"></i> System Monitor</a>
         <a href="{{ route('alerts.index') }}"  class="{{ request()->routeIs('alerts.*')   ? 'active':'' }}"><i class="bi bi-bell-fill"></i> Alerts</a>
         <a href="{{ route('settings.index') }}" class="{{ request()->routeIs('settings.*') ? 'active':'' }}"><i class="bi bi-gear-fill"></i> Settings</a>
     </nav>
@@ -234,6 +241,7 @@ Echo.connector.pusher.connection.bind('disconnected', () => {
 });
 
 /* Live tick */
+@if(config('orderflow.connector') !== 'clusterdelta')
 Echo.channel('xauusd.ticks').listen('.tick.updated', (e) => {
     const priceEl = document.getElementById('live-price');
     const prev = parseFloat(priceEl.dataset.prev || e.bid);
@@ -250,6 +258,27 @@ Echo.channel('xauusd.ticks').listen('.tick.updated', (e) => {
     document.getElementById('feed-label').style.color = '#00c076';
 });
 
+@endif
+@if(config('orderflow.connector') === 'clusterdelta')
+async function pollClusterDelta() {
+    try {
+        const tf = window.GFFollowActiveFeed === false ? window.GFTimeframe : null;
+        const response = await fetch('/api/feed-status' + (tf ? '?tf=' + encodeURIComponent(tf) : ''), {cache: 'no-store'});
+        if (!response.ok) throw new Error('Feed unavailable');
+        const feed = await response.json();
+        if (tf && tf !== window.GFTimeframe) return;
+        document.getElementById('feed-dot').classList.toggle('off', !feed.connected);
+        document.getElementById('feed-label').textContent = feed.connected ? 'ClusterDelta' : (feed.has_data ? 'Feed stale' : 'No MT5 bars');
+        if (feed.price) document.getElementById('live-price').textContent = GF.formatPrice(feed.price);
+        window.dispatchEvent(new CustomEvent('clusterdelta-metrics', {detail: feed}));
+    } catch (_) {
+        document.getElementById('feed-dot').classList.add('off');
+        document.getElementById('feed-label').textContent = 'Unavailable';
+    }
+}
+setInterval(pollClusterDelta, 10000);
+pollClusterDelta();
+@endif
 /* New setup */
 Echo.channel('xauusd.setups').listen('.setup.detected', (e) => {
     const type = e.direction?.toLowerCase();
@@ -261,6 +290,7 @@ Echo.channel('xauusd.setups').listen('.setup.detected', (e) => {
     b.textContent = parseInt(b.textContent||0) + 1;
 });
 </script>
+@include('layouts.zone-notifications')
 @stack('scripts')
 </body>
 </html>

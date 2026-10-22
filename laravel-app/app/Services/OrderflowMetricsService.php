@@ -10,23 +10,51 @@ class OrderflowMetricsService
      * Compute all orderflow metrics from the last N bars in Redis.
      * Returns a structured array consumed by SetupBuilderService.
      */
-    public function compute(string $timeframe, int $lookback = 20): array
+    public function compute(string $timeframe, int $lookback = 20, bool $closedOnly = false): array
     {
-        $raw  = Redis::lrange("xauusd:bars:{$timeframe}", 0, $lookback - 1);
+        $historyLimit = max($lookback + ($closedOnly ? 1 : 0), (int) config('orderflow.participation_history_bars', 300));
+        $raw  = app(\App\Services\MarketDataService::class)->bars($timeframe, $historyLimit);
         $bars = array_map(function ($b) {
             $decoded = json_decode($b, true);
             return is_string($decoded) ? json_decode($decoded, true) : $decoded;
         }, $raw);
 
-        if (empty($bars)) {
-            return $this->emptyMetrics();
+        if ($closedOnly) {
+            $bars = array_values(array_filter($bars, fn ($b) => ($b['closed'] ?? false) === true));
         }
+        return $this->computeFromBars(array_reverse($bars), $timeframe, $lookback);
+    }
 
-        $latest = $bars[0];  // most recent bar first (lpush order)
-        $bars   = array_reverse($bars); // chronological for calculations
+    /** Compute the live metrics against an explicit chronological history for reproducible replay. */
+    public function computeFromBars(array $history, string $timeframe = '5m', int $lookback = 20,
+        bool $closedOnly = false): array
+    {
+        if ($closedOnly) {
+            $history = array_values(array_filter($history, fn ($bar) => ($bar['closed'] ?? false) === true));
+        }
+        usort($history, fn ($a, $b) => ($a['time'] ?? 0) <=> ($b['time'] ?? 0));
+        if (empty($history)) return $this->emptyMetrics();
+
+        $latest = $history[array_key_last($history)];
+        $participation = app(MarketParticipationService::class)->analyse($history, $timeframe);
+        $absorptionEvidence = app(AbsorptionSequenceService::class)->analyse($history, $timeframe);
+        $bars = array_slice($history, -$lookback); // chronological calculation window
+        $previous = count($bars) > 1 ? $bars[count($bars) - 2] : null;
+        $range = $latest['high'] - $latest['low'];
+        $references = app(BrokerReferenceService::class)->summarize($bars);
 
         return [
             'timeframe'        => $timeframe,
+            'bar_time'         => $latest['time'] ?? null,
+            'closed'           => $latest['closed'] ?? false,
+            'received_at'      => $latest['received_at'] ?? null,
+            'bar_count'        => count($bars),
+            'body_range_ratio' => $range > 0 ? abs($latest['close'] - $latest['open']) / $range : null,
+            'exhaustion_bar_count' => min(count($bars), config('orderflow.exhaustion_lookback', 10)),
+            'previous_close'   => $previous['close'] ?? null,
+            'previous_delta'   => $previous['delta'] ?? null,
+            'source'           => config('orderflow.connector'),
+            'instrument'       => config('clusterdelta.instrument', 'GC'),
             'price'            => (float) ($latest['close'] ?? 0),
             'open'             => (float) ($latest['open']  ?? 0),
             'high'             => (float) ($latest['high']  ?? 0),
@@ -36,15 +64,22 @@ class OrderflowMetricsService
             'buy_volume'       => (float) ($latest['buy_vol']  ?? 0),
             'sell_volume'      => (float) ($latest['sell_vol'] ?? 0),
             'cvd'              => $this->calculateCVD($bars),
-            'vwap'             => $this->calculateVWAP($bars),
-            'poc'              => $this->calculatePOC($bars),
-            'absorption'       => $this->detectAbsorption($latest),
+            'vwap'             => $references['vwap'] ?? 0.0,
+            'poc'              => $references['poc'] ?? 0.0,
+            'reference_lookback' => $lookback,
+            'absorption'       => $absorptionEvidence['type'],
+            'absorption_evidence' => $absorptionEvidence,
             'imbalance'        => $this->detectImbalance($latest),
             'stacked_imbalance'=> $this->detectStackedImbalance($bars),
             'exhaustion'       => $this->detectExhaustion($bars),
             'cvd_divergence'   => $this->detectCVDDivergence($bars),
             'buy_pct'          => $this->volumePercent($latest, 'buy'),
             'sell_pct'         => $this->volumePercent($latest, 'sell'),
+            'participation'    => $participation,
+            'participation_state' => $participation['state'],
+            'participation_ratio' => $participation['ratio'],
+            'active_flow'      => $participation['flow'],
+            'delta_share'      => $participation['delta_share'],
         ];
     }
 
@@ -55,53 +90,6 @@ class OrderflowMetricsService
             $cvd += ($b['delta'] ?? 0);
         }
         return $cvd;
-    }
-
-    private function calculateVWAP(array $bars): float
-    {
-        $cumTPV = 0;
-        $cumVol = 0;
-        foreach ($bars as $b) {
-            $tp  = (($b['high'] ?? 0) + ($b['low'] ?? 0) + ($b['close'] ?? 0)) / 3;
-            $vol = ($b['buy_vol'] ?? 0) + ($b['sell_vol'] ?? 0);
-            $cumTPV += $tp * $vol;
-            $cumVol += $vol;
-        }
-        return $cumVol > 0 ? round($cumTPV / $cumVol, 2) : 0.0;
-    }
-
-    private function calculatePOC(array $bars): float
-    {
-        $volumeByPrice = [];
-        foreach ($bars as $b) {
-            $price = round(($b['close'] ?? 0) * 2) / 2; // round to 0.5 pip
-            $vol   = ($b['buy_vol'] ?? 0) + ($b['sell_vol'] ?? 0);
-            $volumeByPrice[(string) $price] = ($volumeByPrice[(string) $price] ?? 0) + $vol;
-        }
-        if (empty($volumeByPrice)) return 0.0;
-        arsort($volumeByPrice);
-        return (float) array_key_first($volumeByPrice);
-    }
-
-    private function detectAbsorption(array $bar): string
-    {
-        $open  = $bar['open']  ?? 0;
-        $close = $bar['close'] ?? 0;
-        $high  = $bar['high']  ?? 0;
-        $low   = $bar['low']   ?? 0;
-        $body  = abs($close - $open);
-        $range = $high - $low;
-
-        if ($range < 0.01) return 'NONE';
-
-        $threshold = config('orderflow.absorption_threshold', 0.3);
-        $ratio     = $body / $range;
-
-        if ($ratio < $threshold) {
-            return ($bar['delta'] ?? 0) >= 0 ? 'BULL_ABSORPTION' : 'BEAR_ABSORPTION';
-        }
-
-        return 'NONE';
     }
 
     private function detectImbalance(array $bar): string
@@ -204,9 +192,13 @@ class OrderflowMetricsService
         return [
             'timeframe' => '', 'price' => 0, 'open' => 0, 'high' => 0, 'low' => 0, 'close' => 0,
             'delta' => 0, 'buy_volume' => 0, 'sell_volume' => 0, 'cvd' => 0,
-            'vwap' => 0, 'poc' => 0, 'absorption' => 'NONE', 'imbalance' => 'NEUTRAL',
+            'vwap' => 0, 'poc' => 0, 'absorption' => 'NONE',
+            'absorption_evidence' => ['type'=>'NONE','direction'=>'NEUTRAL','stage'=>'waiting_for_effort',
+                'qualified'=>false,'reason'=>'Waiting for completed M5 bars.'], 'imbalance' => 'NEUTRAL',
             'stacked_imbalance' => 'NONE', 'exhaustion' => 'NONE', 'cvd_divergence' => 'NONE',
-            'buy_pct' => 50, 'sell_pct' => 50,
+            'buy_pct' => 50, 'sell_pct' => 50, 'participation' => app(MarketParticipationService::class)->analyse([], '5m'),
+            'participation_state' => 'UNAVAILABLE', 'participation_ratio' => null,
+            'active_flow' => 'UNAVAILABLE', 'delta_share' => null,
         ];
     }
 }

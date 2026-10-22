@@ -1,0 +1,18 @@
+[Unit]
+Description=GoldFlow Pro MT5 ClusterDelta data forwarder
+Wants=goldflow-web.service
+After=goldflow-web.service
+PartOf=goldflow.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=/var/www/FX_Proj
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/flock --no-fork -n /var/www/FX_Proj/laravel-app/storage/framework/clusterdelta-forwarder.lock /usr/bin/python3 python-ingestion/clusterdelta_ingestion.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal

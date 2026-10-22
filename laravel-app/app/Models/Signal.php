@@ -8,10 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Signal extends Model
 {
     protected $fillable = [
-        'setup_id', 'type', 'direction', 'timeframe', 'value', 'price',
+        'setup_id', 'type', 'direction', 'timeframe', 'value', 'price', 'weight', 'meta',
     ];
 
-    protected $casts = ['price' => 'float'];
+    protected $casts = ['price' => 'float', 'meta' => 'array', 'weight' => 'integer'];
 
     public function setup(): BelongsTo
     {

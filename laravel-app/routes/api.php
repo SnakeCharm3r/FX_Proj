@@ -8,8 +8,42 @@ use App\Http\Controllers\SettingsController;
 use App\Events\TickReceived;
 use App\Events\MetricsUpdated;
 
+Route::get('/system-status', function (\App\Services\SystemMonitorService $monitor) {
+    return response()->json($monitor->status())->header('Cache-Control', 'no-store');
+});
+
+Route::get('/price-zones', function (\App\Services\PriceZoneService $zones) {
+    return response()->json($zones->status())->header('Cache-Control', 'no-store');
+});
+Route::get('/zone-study',[\App\Http\Controllers\ZoneStudyController::class,'data']);
+
+Route::get('/zone-alerts', function (\Illuminate\Http\Request $request, \App\Services\PriceZoneService $zones) {
+    $data = $request->validate(['after' => 'sometimes|integer|min:0']);
+    $query = \App\Models\AlertLog::where('channel', 'browser')->where('type', 'like', 'ZONE_%')
+        ->whereIn('price_zone_id', $zones->scope()->select('id'));
+    $latest = (int) (clone $query)->max('id');
+    if (!isset($data['after']) || $data['after'] > $latest) {
+        return response()->json(['cursor' => $latest, 'alerts' => []])->header('Cache-Control', 'no-store');
+    }
+    $alerts = $query->where('id', '>', $data['after'])->orderBy('id')->limit(50)
+        ->get(['id', 'message', 'created_at', 'price_zone_id']);
+    return response()->json(['cursor' => $alerts->last()?->id ?? (int) $data['after'], 'alerts' => $alerts])
+        ->header('Cache-Control', 'no-store');
+});
+
+Route::prefix('clusterdelta')->middleware('throttle:120,1')->group(function () {
+    Route::post('/history', [\App\Http\Controllers\BrokerHistoryController::class, 'storeHistory']);
+    Route::post('/footprints', [\App\Http\Controllers\FootprintController::class, 'storeFootprint']);
+    Route::get('/instruments', [\App\Http\Controllers\ClusterDeltaController::class, 'instruments']);
+    Route::post('/bars', [\App\Http\Controllers\ClusterDeltaController::class, 'store']);
+    Route::get('/bars', [\App\Http\Controllers\ClusterDeltaController::class, 'bars']);
+});
+
+Route::get('/orderflow/footprint', [\App\Http\Controllers\FootprintController::class, 'showFootprint']);
+
 /* ── Python microservice → tick data ── */
 Route::post('/ticks', function (\Illuminate\Http\Request $request) {
+    abort_if(config('orderflow.connector') === 'clusterdelta', 409, 'cTrader ingestion disabled.');
     $request->validate(['bid' => 'required|numeric', 'ask' => 'required|numeric']);
     Redis::set('xauusd:tick:latest', json_encode($request->all()));
     broadcast(new TickReceived($request->all()))->toOthers();
@@ -18,6 +52,7 @@ Route::post('/ticks', function (\Illuminate\Http\Request $request) {
 
 /* ── Python microservice → bar data ── */
 Route::post('/bars', function (\Illuminate\Http\Request $request) {
+    abort_if(config('orderflow.connector') === 'clusterdelta', 409, 'cTrader ingestion disabled.');
     $request->validate(['tf' => 'required|string', 'bars' => 'required|array']);
     foreach ($request->bars as $bar) {
         Redis::lpush("xauusd:bars:{$request->tf}", json_encode($bar));
@@ -28,6 +63,7 @@ Route::post('/bars', function (\Illuminate\Http\Request $request) {
 
 /* ── Python microservice → metrics ── */
 Route::post('/metrics', function (\Illuminate\Http\Request $request) {
+    abort_if(config('orderflow.connector') === 'clusterdelta', 409, 'cTrader ingestion disabled.');
     Redis::set('xauusd:metrics:latest', json_encode($request->all()));
     broadcast(new MetricsUpdated($request->all()))->toOthers();
     return response()->json(['ok' => true]);
@@ -36,7 +72,9 @@ Route::post('/metrics', function (\Illuminate\Http\Request $request) {
 /* ── Frontend → chart candles ── */
 Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
     $tf     = $request->get('tf', '15m');
-    $raw    = Redis::lrange("xauusd:bars:{$tf}", 0, 199);
+    $raw    = $tf === '1h' && config('orderflow.connector') === 'clusterdelta'
+        ? array_map(fn ($bar)=>json_encode($bar), app(\App\Services\HourlyPriceHistoryService::class)->bars(500))
+        : app(\App\Services\MarketDataService::class)->bars($tf, 200);
     $parsed = array_reverse(array_map(function ($b) {
         $decoded = json_decode($b, true);
         // Python redis-py stores strings as JSON-encoded strings ("\"{ }\"")
@@ -49,38 +87,15 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
     }
 
     // ── Volume stats for high-volume detection ──────────────────────────
-    $volumes = array_map(fn($b) => ($b['buy_vol'] ?? 0) + ($b['sell_vol'] ?? 0), $parsed);
+    $volumes = array_map(fn($b) => $b['buy_vol'] + $b['sell_vol'], array_filter($parsed, fn($b)=>isset($b['buy_vol'],$b['sell_vol'])));
     $avgVol  = count($volumes) > 0 ? array_sum($volumes) / count($volumes) : 0;
     $volMultiplier = (float) $request->get('vol_mult', 2.0); // bars > 2× avg = high volume
 
-    // ── POC (price level with most cumulative volume) ─────────────────
-    $volumeByPrice = [];
-    foreach ($parsed as $b) {
-        $p = (string) round(($b['close'] ?? 0) * 2) / 2;
-        $volumeByPrice[$p] = ($volumeByPrice[$p] ?? 0) + ($volumes[array_search($b, $parsed)] ?? 0);
-    }
-    arsort($volumeByPrice);
-    $pocPrice = (float) array_key_first($volumeByPrice);
-
-    // ── VWAP ──────────────────────────────────────────────────────────
-    $cumTPV = 0; $cumVol = 0;
-    $vwapLine = [];
-    foreach ($parsed as $b) {
-        $tp = (($b['high'] ?? 0) + ($b['low'] ?? 0) + ($b['close'] ?? 0)) / 3;
-        $v  = ($b['buy_vol'] ?? 0) + ($b['sell_vol'] ?? 0);
-        $cumTPV += $tp * $v;
-        $cumVol += $v;
-        $vwapLine[] = ['time' => $b['time'] ?? 0, 'value' => $cumVol > 0 ? round($cumTPV / $cumVol, 2) : 0];
-    }
-
-    // ── POC horizontal line ────────────────────────────────────────────
-    $pocLine = [];
-    if ($pocPrice > 0 && count($parsed) >= 2) {
-        $pocLine = [
-            ['time' => $parsed[0]['time'] ?? 0,                  'value' => $pocPrice],
-            ['time' => $parsed[count($parsed)-1]['time'] ?? 0,   'value' => $pocPrice],
-        ];
-    }
+    // Use the same rolling broker-price estimates as the metric cards.
+    $references = app(\App\Services\BrokerReferenceService::class)->series($parsed, 20);
+    $vwapLine = $references['vwap'];
+    $pocLine = $references['poc'];
+    $pocPrice = $references['latest']['poc'];
 
     // ── Build candles, volume bars, high-volume markers ───────────────
     $candles         = [];
@@ -99,7 +114,7 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
         ];
 
         // High-volume bars get a brighter, opaque colour
-        $volume[] = [
+        if (isset($b['buy_vol'], $b['sell_vol'])) $volume[] = [
             'time'  => $b['time'] ?? 0,
             'value' => $totalVol,
             'color' => $isHighVol
@@ -119,14 +134,19 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
         }
     }
 
-    $setups = \App\Models\Setup::where('timeframe', $tf)
-        ->whereDate('created_at', '>=', now()->subDays(3))
-        ->get(['direction', 'entry', 'score', 'created_at'])
+    $firstCandle=(int)($candles[0]['time']??0);$lastCandle=(int)($candles[array_key_last($candles)]['time']??0);
+    $setups = \App\Models\Setup::where('source',config('orderflow.connector'))
+        ->where('instrument',config('clusterdelta.instrument','GC'))->where('timeframe', $tf)
+        ->whereBetween('candle_time',[$firstCandle,$lastCandle])
+        ->get(['id','direction','entry','score','candle_time','strategy_version','confluence_detail'])
         ->map(fn($s) => [
-            'time'      => $s->created_at->timestamp,
+            'id'        => $s->id,
+            'time'      => $s->candle_time,
             'direction' => $s->direction,
             'entry'     => $s->entry,
             'score'     => $s->score,
+            'strategy'  => $s->strategy_version,
+            'mode'      => data_get(collect($s->confluence_detail)->firstWhere('key', 'h1_trend'), 'status'),
         ]);
 
     return response()->json([
@@ -139,7 +159,18 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
         'stats'            => [
             'avg_volume' => round($avgVol, 0),
             'poc_price'  => $pocPrice,
+            'vwap_price' => $references['latest']['vwap'],
+            'reference_lookback' => $references['lookback'],
+            'reference_window_bars' => $references['window_bars'],
+            'reference_price_source' => 'mt5_broker',
+            'vwap_method' => 'rolling_typical_price_volume_weighted',
+            'poc_method' => 'rolling_close_volume_proxy',
             'bar_count'  => count($parsed),
+            'price_only_bars' => count(array_filter($parsed, fn($b)=>!isset($b['buy_vol'],$b['sell_vol']))),
+            'last_bar_time' => $parsed[count($parsed) - 1]['time'],
+            'last_bar_closed' => $parsed[count($parsed) - 1]['closed'] ?? true,
+            'last_received' => $parsed[count($parsed) - 1]['received_at'] ?? null,
+            'candle_source' => $parsed[count($parsed) - 1]['candle_source'] ?? 'native',
         ],
     ]);
 });
@@ -147,23 +178,21 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
 /* ── Frontend → orderflow data ── */
 Route::get('/orderflow/delta', function (\Illuminate\Http\Request $request) {
     $tf     = $request->get('tf', '15m');
-    $parsed = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, Redis::lrange("xauusd:bars:{$tf}", 0, 99)));
+    $parsed = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, app(\App\Services\MarketDataService::class)->bars($tf, 100)));
     $delta  = array_map(fn($b) => ['time' => $b['time'] ?? 0, 'delta' => $b['delta'] ?? 0], $parsed);
     $cvd    = []; $cum = 0;
     foreach ($parsed as $b) { $cum += ($b['delta'] ?? 0); $cvd[] = ['time' => $b['time'] ?? 0, 'value' => $cum]; }
     return response()->json(compact('delta', 'cvd'));
 });
 
-Route::get('/orderflow/imbalance', function (\Illuminate\Http\Request $request) {
-    $tf      = $request->get('tf', '15m');
-    $parsed  = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, Redis::lrange("xauusd:bars:{$tf}", 0, 199)));
-    $candles = array_map(fn($b) => ['time'=>$b['time']??0,'open'=>$b['open']??0,'high'=>$b['high']??0,'low'=>$b['low']??0,'close'=>$b['close']??0], $parsed);
-    return response()->json(['candles' => $candles, 'zones' => []]);
+Route::get('/orderflow/imbalance', function (\Illuminate\Http\Request $request, \App\Services\FootprintService $footprint) {
+    $data = $request->validate(['tf' => ['sometimes', \Illuminate\Validation\Rule::in(config('orderflow.timeframes'))]]);
+    return response()->json($footprint->imbalanceSnapshot($data['tf'] ?? '15m'))->header('Cache-Control', 'no-store');
 });
 
 Route::get('/orderflow/cvd', function (\Illuminate\Http\Request $request) {
     $tf      = $request->get('tf', '15m');
-    $parsed  = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, Redis::lrange("xauusd:bars:{$tf}", 0, 199)));
+    $parsed  = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, app(\App\Services\MarketDataService::class)->bars($tf, 200)));
     $candles = array_map(fn($b) => ['time'=>$b['time']??0,'open'=>$b['open']??0,'high'=>$b['high']??0,'low'=>$b['low']??0,'close'=>$b['close']??0], $parsed);
     $cvd     = []; $cum = 0;
     foreach ($parsed as $b) { $cum += ($b['delta'] ?? 0); $cvd[] = ['time' => $b['time']??0, 'value' => $cum]; }
@@ -172,7 +201,11 @@ Route::get('/orderflow/cvd', function (\Illuminate\Http\Request $request) {
 });
 
 /* ── Setups ── */
-Route::get('/setups/{setup}',  [SetupController::class, 'show']);
+Route::get('/setups/{setup}/focus', [SetupController::class, 'focus'])->whereNumber('setup');
+Route::get('/setups/status', function (\App\Services\SetupEngineService $engine) {
+    return response()->json($engine->status())->header('Cache-Control', 'no-store');
+});
+Route::get('/setups/{setup}',  [SetupController::class, 'show'])->whereNumber('setup');
 Route::get('/setups/export',   function () {
     $setups  = \App\Models\Setup::all();
     $headers = ['Content-Type' => 'text/csv', 'Content-Disposition' => 'attachment; filename="setups.csv"'];
@@ -188,3 +221,36 @@ Route::get('/setups/export',   function () {
 /* ── Alerts & Settings ── */
 Route::post('/alerts/test', [AlertController::class,  'test']);
 Route::post('/settings',    [SettingsController::class,'update']);
+
+Route::get('/feed-status', function (\Illuminate\Http\Request $request, \App\Services\MarketDataService $marketData) {
+    $data = $request->validate(['tf' => ['sometimes', \Illuminate\Validation\Rule::in(['1m', '5m', '15m', '30m', '1h', '4h', '1d'])]]);
+    $tf = $data['tf'] ?? $marketData->activeTimeframe();
+    $raw = $marketData->bars($tf, 1);
+    $bar = $raw ? json_decode($raw[0], true) : null;
+    $fresh = $bar && now()->timestamp - ($bar['received_at'] ?? 0) < 60;
+    return response()->json(['source' => config('orderflow.connector'),
+        'instrument' => config('clusterdelta.instrument'), 'connected' => (bool) $fresh,
+        'timeframe' => $tf,
+        'has_data' => $bar !== null,
+        'status' => !$bar ? 'waiting_for_first_bar' : ($fresh ? 'receiving' : 'stale'),
+        'last_received' => $bar['received_at'] ?? null, 'price' => $bar['close'] ?? null,
+        'metrics' => $bar ? app(\App\Services\OrderflowMetricsService::class)->compute($tf) : null]);
+});
+
+Route::get('/orderflow/participation', function (\Illuminate\Http\Request $request) {
+    $data = $request->validate([
+        'instrument' => ['sometimes', 'string', 'max:32'],
+        'tf' => ['sometimes', \Illuminate\Validation\Rule::in(['1m','5m','15m','30m','1h','4h','1d'])],
+        'limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
+    ]);
+    $instrument = $data['instrument'] ?? config('clusterdelta.instrument', 'GC');
+    $timeframe = $data['tf'] ?? '5m';
+    $rows = \App\Models\MarketParticipationSnapshot::where('source', config('orderflow.connector'))
+        ->where('instrument', $instrument)->where('timeframe', $timeframe)
+        ->orderByDesc('candle_time')->limit($data['limit'] ?? 100)->get();
+    return response()->json(['instrument'=>$instrument,'timeframe'=>$timeframe,
+        'classification'=>['increased_ratio'=>config('orderflow.participation_increased_ratio'),
+            'decreased_ratio'=>config('orderflow.participation_decreased_ratio'),
+            'baseline'=>'rolling median of prior completed bars'],
+        'rows'=>$rows]);
+});

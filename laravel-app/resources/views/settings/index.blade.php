@@ -21,7 +21,8 @@
                         ['delta_threshold',          'Delta Threshold',            config('orderflow.delta_threshold',500),       'Min absolute bar delta for delta signal'],
                         ['cvd_divergence_threshold', 'CVD Divergence Threshold',  config('orderflow.cvd_divergence_threshold',200),'CVD vs price divergence threshold'],
                         ['imbalance_ratio',          'Imbalance Ratio',            config('orderflow.imbalance_ratio',3.0),       'Buy/Sell vol ratio to flag imbalance'],
-                        ['absorption_threshold',     'Absorption Threshold',       config('orderflow.absorption_threshold',0.3),  'Wick-to-body ratio for absorption'],
+                        ['absorption_effort_lookback','Absorption Effort Lookback',config('orderflow.absorption_effort_lookback',4),'M5 bars allowed between failed effort and rejection'],
+                        ['absorption_effort_wick_ratio','Effort Wick Ratio',       config('orderflow.absorption_effort_wick_ratio',0.4),'Minimum rejected wick share on the high-volume effort bar'],
                         ['stacked_imbalance_count',  'Stacked Imbalance Count',    config('orderflow.stacked_imbalance_count',3), 'Consecutive imbalance bars for stacked signal'],
                         ['exhaustion_lookback',      'Exhaustion Lookback (bars)', config('orderflow.exhaustion_lookback',10),    'Bars to look back for exhaustion'],
                         ['vwap_deviation_pips',      'VWAP Deviation (pips)',      config('orderflow.vwap_deviation_pips',150),   'Distance from VWAP to trigger signal'],
@@ -97,17 +98,17 @@
             <div class="p-3">
                 <div class="mb-3">
                     <label class="form-label" style="font-size:.75rem;font-weight:500;color:#c0c8d8">Connector</label>
-                    <select name="connector" class="form-select form-select-sm" style="background:var(--bg-panel);border-color:var(--bg-border);color:#e2e8f0;font-size:.8rem">
-                        <option value="ctrader" {{ config('orderflow.connector')!=='mt5'&&config('orderflow.connector')!=='demo'?'selected':'' }}>Pepperstone — cTrader Open API</option>
-                        <option value="mt5"     {{ config('orderflow.connector')==='mt5'?'selected':'' }}>MetaTrader 5</option>
-                        <option value="demo"    {{ config('orderflow.connector')==='demo'?'selected':'' }}>Demo / Simulated Feed</option>
-                    </select>
+                    {{-- cTrader/MT5/demo connector inputs temporarily disabled during ClusterDelta testing.
+                    <select name="connector"><option value="ctrader">cTrader Open API</option></select>
+                    --}}
+                    <div>ClusterDelta via local MT5 · {{ config('clusterdelta.instrument') }}</div>
+                    <small class="text-muted">Volume and delta: ClusterDelta. Candle prices: MT5 broker chart.</small>
                 </div>
                 <div>
                     <label class="form-label" style="font-size:.75rem;font-weight:500;color:#c0c8d8">Ingestion Service</label>
                     <div class="d-flex align-items-center gap-2 mt-1">
-                        <span class="pulse-dot {{ $pythonRunning?'':'off' }}"></span>
-                        <span style="font-size:.8rem;color:var(--text-muted-custom)">{{ $pythonRunning?'Running':'Stopped' }}</span>
+                        <span class="pulse-dot off"></span>
+                        <span style="font-size:.8rem;color:var(--text-muted-custom)">MT5 bridge (Python cTrader ingestion disabled)</span>
                     </div>
                 </div>
             </div>

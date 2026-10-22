@@ -1,0 +1,16 @@
+[Unit]
+Description=GoldFlow Pro web application on localhost:8003
+PartOf=goldflow.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=/var/www/FX_Proj/laravel-app
+Environment=PATH=/opt/lampp/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/flock --no-fork -n /var/www/FX_Proj/laravel-app/storage/framework/app-server.lock /opt/lampp/bin/php artisan serve --host=127.0.0.1 --port=8003 --tries=1 --no-reload
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal

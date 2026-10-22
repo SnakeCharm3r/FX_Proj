@@ -6,7 +6,7 @@
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
         <h5 class="mb-0" style="font-weight:700;color:#e2e8f0"><i class="bi bi-bell-fill me-2" style="color:var(--gold)"></i>Alerts</h5>
-        <small style="color:var(--text-muted-custom)">Telegram &amp; email notification history</small>
+        <small style="color:var(--text-muted-custom)">In-app zone arrivals and notification history</small>
     </div>
     <button onclick="testAlert()" class="btn btn-sm" style="background:rgba(245,200,66,.1);border:1px solid rgba(245,200,66,.3);color:var(--gold);font-size:.78rem">
         <i class="bi bi-send me-1"></i> Test Alert
@@ -52,6 +52,7 @@
                     <td style="color:#8d97b0;white-space:nowrap">{{ $log->created_at->format('d M y H:i:s') }}</td>
                     <td>
                         @if($log->channel==='telegram') <span style="color:#29b6f6;font-size:.75rem"><i class="bi bi-telegram me-1"></i>Telegram</span>
+                        @elseif($log->channel==='browser') <span style="color:var(--gold);font-size:.75rem"><i class="bi bi-app-indicator me-1"></i>In-app</span>
                         @else <span style="color:var(--gold);font-size:.75rem"><i class="bi bi-envelope me-1"></i>Email</span>
                         @endif
                     </td>
@@ -65,7 +66,7 @@
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="5" class="text-center py-5" style="color:var(--text-muted-custom)"><i class="bi bi-bell-slash fs-2 d-block mb-2" style="opacity:.3"></i>No alerts sent yet</td></tr>
+                <tr><td colspan="5" class="text-center py-5" style="color:var(--text-muted-custom)"><i class="bi bi-bell-slash fs-2 d-block mb-2" style="opacity:.3"></i>No alerts recorded yet</td></tr>
                 @endforelse
             </tbody>
         </table>

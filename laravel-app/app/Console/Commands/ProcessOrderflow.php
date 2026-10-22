@@ -2,49 +2,29 @@
 
 namespace App\Console\Commands;
 
-use App\Events\MetricsUpdated;
-use App\Services\OrderflowMetricsService;
-use App\Services\SetupBuilderService;
+use App\Services\SetupEngineService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 
 class ProcessOrderflow extends Command
 {
-    protected $signature   = 'orderflow:process {--tf=* : Timeframes to process (default: all configured)}';
-    protected $description = 'Compute orderflow metrics, evaluate signals, and emit trade setups';
+    protected $signature = 'orderflow:process {--tf=* : Timeframes to process (default: all configured)}';
+    protected $description = 'Evaluate fresh completed ClusterDelta candles and save qualifying setups';
 
-    public function handle(
-        OrderflowMetricsService $metricsService,
-        SetupBuilderService     $setupBuilder
-    ): int {
-        $timeframes = $this->option('tf') ?: config('orderflow.timeframes', ['15m', '1h']);
-
-        foreach ($timeframes as $tf) {
+    public function handle(SetupEngineService $engine): int
+    {
+        $failed = false;
+        foreach ($this->option('tf') ?: config('orderflow.timeframes') as $tf) {
+            if (!in_array($tf, config('orderflow.timeframes'), true)) {
+                $this->error('Unsupported timeframe: '.$tf); $failed = true; continue;
+            }
             try {
-                $metrics = $metricsService->compute($tf);
-
-                if ($metrics['price'] === 0.0) {
-                    $this->line("  <fg=yellow>⚠ No data for {$tf}</>");
-                    continue;
-                }
-
-                // Broadcast metrics update to dashboard
-                broadcast(new MetricsUpdated($metrics));
-
-                // Attempt to build a setup
-                $setup = $setupBuilder->evaluate($metrics);
-
-                if ($setup) {
-                    $this->line("  <fg=green>✓ {$tf}: {$setup->direction} setup #{$setup->id} score={$setup->score}%</>");
-                } else {
-                    $this->line("  <fg=gray>  {$tf}: score below threshold or no signal alignment</>");
-                }
-            } catch (\Exception $e) {
-                $this->error("  ✗ {$tf}: " . $e->getMessage());
-                Log::error("ProcessOrderflow [{$tf}]: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                $state = $engine->run($tf);
+                $this->line($tf.' · '.$state['status'].' · '.$state['reason']);
+                if ($state['status'] === 'error') $failed = true;
+            } catch (\Throwable $e) {
+                report($e); $this->error($tf.' · Local storage unavailable.'); $failed = true;
             }
         }
-
-        return self::SUCCESS;
+        return $failed ? self::FAILURE : self::SUCCESS;
     }
 }

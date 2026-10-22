@@ -1,0 +1,19 @@
+# Spotted setup history
+
+Open `/setups#setup-observation-history`. The table records completed-candle evaluations scoring **45/100 or higher**. `OF_HISTORY_MIN_SCORE=45` controls this retention floor. Scores below it are not stored in this table. The live setup and Telegram entry threshold stays at `OF_MIN_CONFLUENCE_SCORE=60`; retaining a 45–59 observation does not create a live setup, supporting Signal rows or an entry alert.
+
+The setup engine records observations only after its usual checks pass: fresh broker exports, enough completed candles, matching fresh footprint cells, consistent totals and matching volume/delta. A blocked evaluation has no historical row. Separate BUY and SELL scores are retained; opposing weights are not combined. A tied direction meeting the floor can be recorded as TIED, with no directional entry/stop/target levels and no live signal.
+
+`setup_observations` has a database unique constraint on source, instrument, timeframe and candle opening timestamp. It freezes the first matched evaluation that meets the floor: score, both directional scores, conditions, metric snapshot, strategy version, thresholds and spotted time. Repeated ten-second checks do not create duplicates or rewrite the original evidence. If that candle later qualifies for a live setup, the existing observation links to it; its first score stays intact and the detail view distinguishes the later live score.
+
+Directional observations store reference entry, SL, TP1 and TP2 calculated by the same level rules as real setups. These are research references, not orders or recorded outcomes for an observation-only row. Linked live setups retain their existing independent TP/SL tracking and Telegram behavior. This feature does not lower live eligibility or enable execution of trades.
+
+Filters cover direction, timeframe, spotted-from date (EAT), records below 65, records below their saved live threshold and records linked to live setups. The table and counts refresh with the existing history poll, roughly every thirty seconds. Observation pagination uses a separate page parameter; history filters preserve the focused live setup. View opens saved condition details and reference levels. Table candle times and spotted times are displayed in Africa/Dar_es_Salaam (EAT).
+
+`php artisan setups:import-history` imports already saved qualifying records without sending notifications. It is idempotent and preserves their original timestamps, levels and condition details. Imports are labelled `saved_setup_import`; missing original metrics or signal thresholds remain unknown rather than being invented. One actual previous BUY setup was imported at installation. Older subthreshold evaluations were overwritten before this feature and cannot be reconstructed from the saved setup record.
+
+This is a durable evaluation ledger for retained observations, not a complete tick/footprint archive or an outcome backtester. The stored metric snapshot supports reviewing why a candidate was spotted; it does not reproduce all missing historical inputs.
+
+Verification: 100 tests / 594 assertions passed, including inclusive 45 retention, 44 exclusion, below-threshold engine behavior with notifications enabled, blocked inputs, duplicate suppression, frozen snapshots, source/timeframe/candle separation, tied directions, import idempotence, filters, scoped details and links to live setups. Persistence fixtures use SQLite in memory; no synthetic setups were added to the live database.
+
+After the watcher restarted on 22 October, it recorded a real H1 BUY observation at 45/100 at 08:06:17 EAT. The live setup count stayed at one, and the Telegram log did not gain an entry alert. History then contained yesterday's imported 65-point M15 BUY and this new 45-point H1 observation. Browser verification covered the real imported row, filters, focused-setup preservation and saved-condition detail without JavaScript errors.

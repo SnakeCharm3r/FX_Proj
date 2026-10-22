@@ -6,7 +6,7 @@
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
         <h5 class="mb-0" style="font-weight:700;color:#e2e8f0"><i class="bi bi-activity me-2" style="color:var(--gold)"></i>Signal History</h5>
-        <small style="color:var(--text-muted-custom)">Raw orderflow signals from the engine</small>
+        <small style="color:var(--text-muted-custom)">Signals supporting saved setups. Conditions below the setup threshold are visible on the <a href="{{ route('setups.index') }}" style="color:var(--gold)">live setup checklist</a>.</small>
     </div>
 </div>
 

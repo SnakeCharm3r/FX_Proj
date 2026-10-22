@@ -1,0 +1,6 @@
+[Unit]
+Description=GoldFlow Pro application and data services
+Wants=goldflow-web.service goldflow-forwarder.service goldflow-reverb.service goldflow-engine.service
+
+[Install]
+WantedBy=default.target

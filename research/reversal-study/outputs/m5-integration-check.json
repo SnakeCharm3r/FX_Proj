@@ -1,0 +1,95 @@
+{
+  "checked_at_utc": "2026-10-22T06:46:55.098687+00:00",
+  "timeframe": "5m",
+  "paired_closed_candles": 11,
+  "all_totals_match": true,
+  "broker_poll_advanced": true,
+  "feed": {
+    "instrument": "GC",
+    "timeframe": "5m",
+    "exported_at": 1792651607,
+    "received_at": 1792651608,
+    "export_fresh": true,
+    "receiving": true
+  },
+  "checks": [
+    {
+      "time": 1792648200,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 57
+    },
+    {
+      "time": 1792648500,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 160
+    },
+    {
+      "time": 1792648800,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 48
+    },
+    {
+      "time": 1792649100,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 77
+    },
+    {
+      "time": 1792649400,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 81
+    },
+    {
+      "time": 1792649700,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 54
+    },
+    {
+      "time": 1792650000,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 58
+    },
+    {
+      "time": 1792650300,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 69
+    },
+    {
+      "time": 1792650600,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 33
+    },
+    {
+      "time": 1792650900,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 67
+    },
+    {
+      "time": 1792651200,
+      "volume_match": true,
+      "delta_match": true,
+      "native_totals_match": true,
+      "levels": 50
+    }
+  ],
+  "scope": "Integration check only; no strategy performance claim or replay alerts."
+}
