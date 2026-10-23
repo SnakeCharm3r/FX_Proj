@@ -16,6 +16,7 @@ Route::get('/price-zones', function (\App\Services\PriceZoneService $zones) {
     return response()->json($zones->status())->header('Cache-Control', 'no-store');
 });
 Route::get('/zone-study',[\App\Http\Controllers\ZoneStudyController::class,'data']);
+Route::get('/variable-opportunities',[\App\Http\Controllers\VariableOpportunityController::class,'data']);
 
 Route::get('/zone-alerts', function (\Illuminate\Http\Request $request, \App\Services\PriceZoneService $zones) {
     $data = $request->validate(['after' => 'sometimes|integer|min:0']);

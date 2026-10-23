@@ -13,7 +13,8 @@ class SetupAlertMessageTest extends TestCase
     {
         return (new Setup(['direction' => $direction, 'timeframe' => '15m', 'entry' => 4115.49,
             'stop_loss' => 4110.74, 'tp1' => 4122.62, 'tp2' => 4129.74, 'score' => 65,
-            'confluence_detail'=>[['key'=>'absorption','raw_value'=>$direction==='BUY'?12.5:-12.5]]]))
+            'instrument'=>'GC','confluence_detail'=>[['key'=>'absorption',
+                'raw_value'=>$direction==='BUY'?12.5:-12.5,'total_volume'=>2468]]]))
             ->forceFill(['id' => 42, 'created_at' => CarbonImmutable::parse('2026-10-21 06:30:39', 'UTC')]);
     }
 
@@ -21,17 +22,18 @@ class SetupAlertMessageTest extends TestCase
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-21 09:00:00', 'UTC'));
         $message = app(SetupAlertMessageService::class)->entry($this->setupRow());
-        foreach (['Buy opportunity', 'Delta: <b>+12.5%</b>', 'Confluence: <b>65%</b>',
+        foreach (['GC · Buy opportunity', '🟢 ▲ Positive Delta: <b>+12.5%</b>',
+            '📊 Volume: <b>2,468</b>', 'Confluence: <b>65%</b>',
             'SL: <code>4110.74</code>', 'TP1: <code>4122.62</code>', 'TP2: <code>4129.74</code>'] as $text) {
             $this->assertStringContainsString($text, $message);
         }
-        foreach (['🟢','Setup #42','15M','4115.49','ENTRY SIGNAL','21 Oct 2026'] as $text) {
+        foreach (['Setup #42','15M','4115.49','ENTRY SIGNAL','21 Oct 2026'] as $text) {
             $this->assertStringNotContainsString($text,$message);
         }
         $this->assertDoesNotMatchRegularExpression('/\{[a-z_0-9]+\}/', $message);
         $sell = app(SetupAlertMessageService::class)->entry($this->setupRow('SELL'));
         $this->assertStringContainsString('Sell opportunity', $sell);
-        $this->assertStringContainsString('Delta: <b>-12.5%</b>', $sell);
+        $this->assertStringContainsString('🔴 ▼ Negative Delta: <b>-12.5%</b>', $sell);
     }
 
     public function test_absorption_strategy_entry_names_its_rule_instead_of_presenting_diagnostic_points_as_confidence(): void

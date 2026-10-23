@@ -48,6 +48,7 @@ class H1TrendRangeStrategyService
             $this->signal('footprint_confirmation','Native footprint confirmation',15,$footprint?($direction==='BUY'?'bullish':'bearish'):'neutral',
                 'Requires a matching native stacked imbalance or previous-POC rejection.'),
         ];
+        $signals[2]['total_volume']=$totalVolume;
         if(!$cvd||!$footprint) return array_merge($base,$zone,['strategy_version'=>'h1_trend_range_v3',
             'qualified'=>false,'stage'=>'waiting_for_orderflow_confluence','direction'=>$direction,'mode'=>$mode,'h1_trend'=>$trend,
             'signals'=>$signals,'rule_score'=>70+($cvd?15:0)+($footprint?15:0),

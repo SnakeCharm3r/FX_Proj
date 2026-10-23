@@ -47,10 +47,18 @@ class SetupAlertMessageService
         $deltaPercentage = is_numeric($absorption['raw_value'] ?? null)
             ? sprintf('%+.1f%%', (float) $absorption['raw_value'])
             : 'unavailable';
+        $positive = (float)($absorption['raw_value'] ?? 0) >= 0;
+        $volume = collect($setup->confluence_detail ?? [])->first(
+            fn($signal) => isset($signal['total_volume']) && is_numeric($signal['total_volume'])
+        )['total_volume'] ?? null;
         $values = array_merge([
             '{direction_icon}' => $icon, '{direction}' => $setup->direction,
+            '{instrument}' => $setup->instrument ?: config('clusterdelta.instrument','GC'),
             '{opportunity}' => ucfirst(strtolower($setup->direction)).' opportunity',
+            '{delta_marker}' => $positive ? '🟢 ▲' : '🔴 ▼',
+            '{delta_label}' => $positive ? 'Positive Delta' : 'Negative Delta',
             '{delta_percentage}' => $deltaPercentage,
+            '{volume}' => is_numeric($volume) ? number_format((float)$volume,0,'.',',') : 'unavailable',
             '{setup_id}' => (string) $setup->id, '{timeframe}' => strtoupper($setup->timeframe),
             '{entry}' => number_format($setup->entry, 2, '.', ''),
             '{stop_loss}' => number_format($setup->stop_loss, 2, '.', ''),

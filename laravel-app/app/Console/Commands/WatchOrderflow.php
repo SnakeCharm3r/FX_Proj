@@ -17,6 +17,7 @@ class WatchOrderflow extends Command
             $this->call('price-zones:process');
             $this->call('price-zones:observe');
             $this->call('orderflow:process');
+            $this->call('opportunities:process');
             $this->call('setups:track-targets');
             sleep($interval);
         }

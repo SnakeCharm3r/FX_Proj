@@ -32,6 +32,8 @@ return [
     'scalp_test_lot' => (float) env('OF_SCALP_TEST_LOT', 0.01),
     'xau_contract_size' => (float) env('OF_XAU_CONTRACT_SIZE', 100),
     'live_max_stop_points' => (float) env('OF_LIVE_MAX_STOP_POINTS', 5.0),
+    'variable_opportunities_enabled' => (bool) env('OF_VARIABLE_OPPORTUNITIES_ENABLED', false),
+    'variable_min_rules' => (int) env('OF_VARIABLE_MIN_RULES', 25),
     'dedicated_strategies' => ['zone_absorption_v2','h1_trend_range_v3'],
     'gc_session_timezone' => env('OF_GC_SESSION_TIMEZONE', 'America/New_York'),
     'gc_session_open' => env('OF_GC_SESSION_OPEN', '18:00'),

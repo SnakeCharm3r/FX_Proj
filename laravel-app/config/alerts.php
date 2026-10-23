@@ -13,8 +13,9 @@ return [
 
     'templates' => [
         'new_setup' =>
-            "<b>{opportunity}</b>\n" .
-            "Delta: <b>{delta_percentage}</b>\n" .
+            "<b>{instrument} · {opportunity}</b>\n" .
+            "{delta_marker} {delta_label}: <b>{delta_percentage}</b>\n" .
+            "📊 Volume: <b>{volume}</b>\n" .
             "Confluence: <b>{score}%</b>\n" .
             "SL: <code>{stop_loss}</code>\n" .
             "TP1: <code>{tp1}</code>\n" .

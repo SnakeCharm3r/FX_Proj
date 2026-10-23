@@ -12,6 +12,7 @@ use App\Http\Controllers\ScalpStrategyTesterController;
 
 Route::get('/',                    [DashboardController::class, 'index'])->name('dashboard');
 Route::view('/zones', 'zones.index')->name('zones.index');
+Route::view('/opportunities','opportunities.index')->name('opportunities.index');
 Route::get('/setups',              [SetupController::class,     'index'])->name('setups.index');
 Route::get('/setups/tester',       [StrategyTesterController::class, 'index'])->name('setups.tester');
 Route::get('/setups/tester/scalp', [ScalpStrategyTesterController::class, 'index'])->name('setups.tester.scalp');

@@ -12,7 +12,8 @@ class AlertDispatchService
         $this->dispatch('TEST', 'Test alert from GoldFlow Pro — connection OK');
     }
 
-    public function dispatch(string $type, string $message, string $level = 'info', ?int $setupId = null): void
+    public function dispatch(string $type, string $message, string $level = 'info', ?int $setupId = null,
+        ?int $opportunityId = null): void
     {
         $channels = config('alerts.channels', ['telegram', 'email']);
 
@@ -34,6 +35,7 @@ class AlertDispatchService
 
             AlertLog::create([
                 'setup_id' => $setupId,
+                'variable_opportunity_id' => $opportunityId,
                 'channel'  => $channel,
                 'type'     => $type,
                 'message'  => $message,

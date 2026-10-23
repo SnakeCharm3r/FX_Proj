@@ -58,8 +58,10 @@ class SetupEngineTest extends TestCase
         $alerter = \Mockery::mock(AlertDispatchService::class);
         $alerter->shouldReceive('dispatch')->once()->withArgs(function ($type, $message, $level, $id) {
             return $type === 'NEW_SETUP' && $level === 'buy' && $id > 0
-                && str_contains($message, '<b>Buy opportunity</b>')
-                && str_contains($message, 'Delta:') && str_contains($message, 'Confluence:')
+                && str_contains($message, '<b>GC · Buy opportunity</b>')
+                && str_contains($message, '🟢 ▲ Positive Delta:')
+                && str_contains($message, '📊 Volume: <b>1,200</b>')
+                && str_contains($message, 'Confluence:')
                 && str_contains($message, 'SL:') && str_contains($message, 'TP1:')
                 && str_contains($message, 'TP2:') && !str_contains($message, 'ENTRY SIGNAL');
         });

@@ -11,6 +11,7 @@ Artisan::command('inspire', function () {
 
 /* ── Orderflow engine — runs every minute ── */
 Schedule::command('orderflow:process')->everyMinute()->withoutOverlapping(2);
+Schedule::command('opportunities:process')->everyMinute()->withoutOverlapping(2);
 Schedule::command('price-zones:process')->everyMinute()->withoutOverlapping(2);
 Schedule::command('price-zones:observe')->everyMinute()->withoutOverlapping(2);
 Schedule::command('setups:track-targets')->everyMinute()->withoutOverlapping(2);

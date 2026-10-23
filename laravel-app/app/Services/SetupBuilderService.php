@@ -209,7 +209,7 @@ class SetupBuilderService
                 : sprintf('%s at %.2fx rolling median (%d prior bars); total volume %.0f, total delta %+.0f, session coverage %s.',
                     $state, $ratio, $participation['baseline_sample_size'],
                     $participation['volume'], $delta, $participation['session_coverage']),
-            'weight' => 0, 'raw_value' => $ratio,
+            'weight' => 0, 'raw_value' => $ratio, 'total_volume' => $participation['volume'] ?? null,
         ];
 
         foreach ($signals as &$signal) {

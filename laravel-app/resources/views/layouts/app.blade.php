@@ -110,6 +110,7 @@
         <div class="sidebar-section">Analysis</div>
         <a href="{{ route('dashboard') }}"       class="{{ request()->routeIs('dashboard')       ? 'active':'' }}"><i class="bi bi-speedometer2"></i> Dashboard</a>
         <a href="{{ route('zones.index') }}" class="{{ request()->routeIs('zones.index')?'active':'' }}"><i class="bi bi-bounding-box"></i> H1 Zone Monitor</a>
+        <a href="{{ route('opportunities.index') }}" class="{{ request()->routeIs('opportunities.index')?'active':'' }}"><i class="bi bi-signpost-split"></i> Opportunity Chart</a>
         <a href="{{ route('setups.index') }}"    class="{{ request()->routeIs('setups.index','setups.show','setups.observation') ? 'active':'' }}"><i class="bi bi-lightning-charge-fill"></i> Setups</a>
         <a href="{{ route('setups.tester') }}"   class="{{ request()->routeIs('setups.tester') ? 'active':'' }}"><i class="bi bi-clipboard-data"></i> Strategy Tester</a>
         <a href="{{ route('signals.index') }}"   class="{{ request()->routeIs('signals.*')       ? 'active':'' }}"><i class="bi bi-activity"></i> Signal History</a>

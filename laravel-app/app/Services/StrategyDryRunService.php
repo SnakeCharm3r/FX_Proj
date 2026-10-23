@@ -35,30 +35,15 @@ class StrategyDryRunService
         foreach($bars as $index=>$bar){
             if(!isset($paired[$bar['time']])) continue;
             $prefix=array_slice($bars,0,$index+1);
-            $participation=app(MarketParticipationService::class)->analyse($prefix,'5m');
-            $flow=$participation['flow']??'BALANCED';
-            if(!in_array($flow,['BUY_DOMINANT','SELL_DOMINANT'],true)) continue;
-            $direction=$flow==='BUY_DOMINANT'?'BUY':'SELL';
-            $deltaShare=round(100*(float)($participation['delta_share']??0),1);
-            $ratio=$participation['ratio']!==null?round((float)$participation['ratio'],2):null;
-            $absorption=app(AbsorptionSequenceService::class)->analyse($prefix,'5m');
-            $sequence=($absorption['qualified']??false)?$absorption['direction']:null;
-            $zone=$sequence===$direction
-                ?$this->zoneAt($zones,$h1,$absorption,$bar['time'])
-                :$this->barZoneAt($zones,$h1,$bar,$direction);
-            $ruleCompletion=$sequence===$direction?75:($participation['state']==='INCREASED'?25:0);
-            if($zone) $ruleCompletion=min(100,$ruleCompletion+25);
-            $potentials[]=['time'=>$bar['time'],'direction'=>$direction,'close'=>(float)$bar['close'],
-                'volume'=>(int)$bar['volume'],'delta'=>(int)$bar['delta'],'delta_pct'=>$deltaShare,
-                'participation'=>$participation['state'],'volume_ratio'=>$ratio,'sequence'=>$sequence,
-                'zone_type'=>$zone['type']??null,'rule_completion'=>$ruleCompletion,
-                'finding'=>$this->potentialFinding($direction,$participation['state'],$sequence,$zone)];
-            $strong=$participation['state']==='INCREASED';
-            if($strong||$sequence!==null){
+            $potential=$this->potential($prefix,$zones,$h1);
+            if(!$potential)continue;
+            $potentials[]=$potential;
+            if($potential['notable']){
+                $direction=$potential['direction'];$ratio=$potential['volume_ratio'];
                 $potentialMarkers[]=['time'=>$bar['time'],'position'=>$direction==='BUY'?'belowBar':'aboveBar',
                     'color'=>$direction==='BUY'?'#00c076':'#ff3b5c',
                     'shape'=>$direction==='BUY'?'arrowUp':'arrowDown',
-                    'text'=>sprintf('%s %d%% rules · Δ%+.1f%% · %s', $direction,$ruleCompletion,$deltaShare,
+                    'text'=>sprintf('%s %d%% rules · Δ%+.1f%% · %s', $direction,$potential['rule_completion'],$potential['delta_pct'],
                         $ratio===null?'—':number_format($ratio,2).'x')];
             }
         }
@@ -138,9 +123,34 @@ class StrategyDryRunService
             'potentials','potentialMarkers','potentialSummary','notableFindings');
     }
 
-    private function archive(string $kind,string $date): array
+    /** Shared by the research chart and the live variable-opportunity watcher. */
+    public function potential(array $prefix,array $zones,array $h1): ?array
     {
-        $root=Storage::disk('local')->path("research/clusterdelta/GC/5m/{$date}/{$kind}");
+        $bar=end($prefix);if(!$bar)return null;
+        $participation=app(MarketParticipationService::class)->analyse($prefix,'5m');
+        $flow=$participation['flow']??'BALANCED';
+        if(!in_array($flow,['BUY_DOMINANT','SELL_DOMINANT'],true))return null;
+        $direction=$flow==='BUY_DOMINANT'?'BUY':'SELL';
+        $absorption=app(AbsorptionSequenceService::class)->analyse($prefix,'5m');
+        $sequence=($absorption['qualified']??false)?$absorption['direction']:null;
+        $zone=$sequence===$direction?$this->zoneAt($zones,$h1,$absorption,$bar['time'])
+            :$this->barZoneAt($zones,$h1,$bar,$direction);
+        $score=$sequence===$direction?75:($participation['state']==='INCREASED'?25:0);
+        if($zone)$score=min(100,$score+25);
+        return ['time'=>$bar['time'],'direction'=>$direction,'close'=>(float)$bar['close'],
+            'volume'=>(int)(($bar['buy_vol']??0)+($bar['sell_vol']??0)),
+            'delta'=>(int)$bar['delta'],'delta_pct'=>round(100*(float)($participation['delta_share']??0),1),
+            'participation'=>$participation['state'],
+            'volume_ratio'=>$participation['ratio']!==null?round((float)$participation['ratio'],2):null,
+            'sequence'=>$sequence,'zone_type'=>$zone['type']??null,'zone'=>$zone,
+            'rule_completion'=>$score,'notable'=>$participation['state']==='INCREASED'||$sequence!==null,
+            'finding'=>$this->potentialFinding($direction,$participation['state'],$sequence,$zone)];
+    }
+
+    public function archive(string $kind,string $date): array
+    {
+        $instrument=config('clusterdelta.instrument','GC');
+        $root=Storage::disk('local')->path("research/clusterdelta/{$instrument}/5m/{$date}/{$kind}");
         if(!is_dir($root)) return [];
         $latest=[];
         foreach(glob($root.'/*.json.gz')?:[] as $file){
@@ -155,6 +165,7 @@ class StrategyDryRunService
                 $bar['buy_vol']=($volume+$delta)/2;$bar['sell_vol']=($volume-$delta)/2;$bar['closed']=true;
             }else{
                 $bar['volume']=(int)$bar['ask']+(int)$bar['bid'];$bar['delta']=(int)$bar['ask']-(int)$bar['bid'];
+                $bar['tick_size']=(float)($decoded['metadata']['tick_size']??.1);
             }
             $latest[$time]=['observed'=>$observed,'bar'=>$bar];
         }
