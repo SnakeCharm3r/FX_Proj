@@ -8,4 +8,4 @@ done
 if ((${#session_names[@]})); then
     /usr/bin/systemctl --user import-environment "${session_names[@]}"
 fi
-/usr/bin/systemctl --user start goldflow.target goldflow-mt5.service
+/usr/bin/systemctl --user start goldflow.target
