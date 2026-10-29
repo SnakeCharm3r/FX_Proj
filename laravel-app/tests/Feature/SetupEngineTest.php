@@ -299,11 +299,11 @@ class SetupEngineTest extends TestCase
     {
         $m = $this->metrics();
         $setup = app(SetupBuilderService::class)->evaluate($m);
-        $market = \Mockery::mock(MarketDataService::class);
-        $market->shouldReceive('activeTimeframe')->andReturn('15m');
-        $market->shouldReceive('bars')->andReturn([json_encode(array_merge($m, ['time' => $m['bar_time'],
-            'buy_vol' => 1000, 'sell_vol' => 200]))]);
-        $this->app->instance(MarketDataService::class, $market);
+        $footprint = \Mockery::mock(FootprintService::class);
+        $footprint->shouldReceive('activeTimeframe')->andReturn('15m');
+        $footprint->shouldReceive('bars')->andReturn([array_merge($m, ['time' => $m['bar_time'],
+            'buy_vol' => 1000, 'sell_vol' => 200])]);
+        $this->app->instance(FootprintService::class, $footprint);
         Redis::shouldReceive('get')->andReturn(null);
         $this->get('/')->assertOk()->assertViewHas('recentBars', fn ($bars) => $bars[0]['signal'] === 'BUY')
             ->assertSee('Bar vol ratio')->assertSee('confluence-signals');

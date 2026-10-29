@@ -4,7 +4,7 @@
 @section('content')
 <div class="mb-3">
     <h5 class="mb-0" style="font-weight:700;color:#e2e8f0"><i class="bi bi-graph-up-arrow me-2" style="color:var(--gold)"></i>Cumulative Volume Delta</h5>
-    <small style="color:var(--text-muted-custom)">CVD vs Price divergence — institutional absorption detection</small>
+    <small style="color:var(--text-muted-custom)">Native GC footprint CVD against native GC futures price</small>
 </div>
 <div class="row g-3">
     <div class="col-12">
@@ -74,15 +74,7 @@ function loadCVD(tf) {
                 document.getElementById('cvd-trend').style.color = d.summary.trend==='UP'?'var(--green-bull)':(d.summary.trend==='DOWN'?'var(--red-bear)':'var(--text-muted-custom)');
             }
         })
-        .catch(()=>{
-            const now=Math.floor(Date.now()/1000); const candles=[],cvd=[]; let p=3320,cum=0;
-            for(let i=60;i>=0;i--){const t=now-i*900,o=p,c=o+(Math.random()-.48)*8,h=Math.max(o,c)+Math.random()*3,l=Math.min(o,c)-Math.random()*3,d=Math.round((Math.random()-.45)*1000);
-                cum+=d; candles.push({time:t,open:+o.toFixed(2),high:+h.toFixed(2),low:+l.toFixed(2),close:+c.toFixed(2)}); cvd.push({time:t,value:cum}); p=c;}
-            priceSeries.setData(candles); cvdLine.setData(cvd);
-            document.getElementById('current-cvd').textContent = cum.toLocaleString();
-            document.getElementById('cvd-trend').textContent = cum>=0?'UP':'DOWN';
-            document.getElementById('cvd-trend').style.color = cum>=0?'var(--green-bull)':'var(--red-bear)';
-        });
+        .catch(()=>{ priceSeries.setData([]); cvdLine.setData([]); document.getElementById('current-cvd').textContent='—'; });
 }
 document.addEventListener('DOMContentLoaded', ()=>loadCVD('15m'));
 

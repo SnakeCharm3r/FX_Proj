@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 class VariableOpportunityService
 {
-    public const VERSION='variable_orderflow_v1';
+    public const VERSION='footprint_primary_v2';
+    public const LEGACY_VERSION='variable_orderflow_v1';
 
     public function __construct(private StrategyDryRunService $replay,private SetupBuilderService $levels,
         private AlertDispatchService $alerts) {}
@@ -17,31 +18,35 @@ class VariableOpportunityService
     public function scope()
     {
         return VariableOpportunity::where('source',config('orderflow.connector'))
-            ->where('instrument',config('clusterdelta.instrument','GC'))->where('strategy_version',self::VERSION);
+            ->where('instrument',config('clusterdelta.instrument','GC'))
+            ->whereIn('strategy_version',[self::VERSION,self::LEGACY_VERSION]);
     }
 
     /** Store the exact replay candidates, independently of strict setup approval. */
-    public function record(array $history,array $footprints,array $h1,bool $historical): array
+    public function record(array $brokerBars,array $footprints,array $h1,bool $historical): array
     {
-        usort($history,fn($a,$b)=>$a['time']<=>$b['time']);
-        $footprints=array_column($footprints,null,'time');$recorded=[];
+        $footprints=array_values(array_filter($footprints,fn($bar)=>($bar['source_totals_match']??false)===true));
+        usort($footprints,fn($a,$b)=>$a['time']<=>$b['time']);
+        $brokerBars=array_column($brokerBars,null,'time');$frames=array_column($footprints,null,'time');$recorded=[];
         $zones=app(PriceZoneDetector::class)->detect($h1,now()->timestamp);
-        foreach($history as $index=>$bar){
+        foreach($footprints as $index=>$bar){
             $time=(int)$bar['time'];$end=$time+300;$now=now()->timestamp;
             if(!($bar['closed']??false)||$end>$now)continue;
             if(!$historical&&($now-$end>300||!$this->fresh($bar['received_at']??0)))continue;
-            $fp=$footprints[$time]??null;
-            if(!$fp||!($fp['closed']??false)||($fp['source_totals_match']??false)!==true
-                ||$fp['volume']!=($bar['buy_vol']+$bar['sell_vol'])||$fp['delta']!=$bar['delta'])continue;
-            $prefix=array_slice($history,0,$index+1);
+            $prefix=array_slice($footprints,0,$index+1);
             $candidate=$this->replay->potential($prefix,$zones,$h1);
             if(!$candidate||!$candidate['notable']||$candidate['rule_completion']<config('orderflow.variable_min_rules',25))continue;
             $metrics=app(OrderflowMetricsService::class)->computeFromBars($prefix,'5m',20,true);
-            $features=app(SetupEngineService::class)->footprintFeatures($fp,$footprints[$time-300]??null,
-                (float)($fp['tick_size']??.1));
+            $features=app(SetupEngineService::class)->footprintFeatures($bar,$frames[$time-300]??null,
+                (float)($bar['tick_size']??.1));
             $trend=app(H1TrendService::class)->assess($end,$h1);
             [$entry,$stop,$tp1,$tp2]=$this->levels->referenceLevels($metrics,$candidate['direction']);
             $risk=round(abs($entry-$stop),2);
+            $broker=$brokerBars[$time]??null;
+            $comparison=$broker?['status'=>'available','broker_close'=>(float)$broker['close'],
+                'gc_close'=>(float)$bar['close'],'price_basis'=>round((float)$bar['close']-(float)$broker['close'],8),
+                'broker_received_at'=>$broker['received_at']??null,
+                'broker_fresh'=>$this->fresh((int)($broker['received_at']??0))]:['status'=>'unavailable'];
             $key=hash('sha256',implode(':',[config('orderflow.connector'),config('clusterdelta.instrument','GC'),
                 '5m',self::VERSION,$time]));
             $opportunity=VariableOpportunity::firstOrCreate(['evaluation_key'=>$key],[
@@ -51,11 +56,12 @@ class VariableOpportunityService
                 'stop_loss'=>$stop,'tp1'=>$tp1,'tp2'=>$tp2,'risk_points'=>$risk,'delta_pct'=>$candidate['delta_pct'],
                 'historical'=>$historical,'telegram_status'=>$historical?'historical':'pending',
                 'evidence'=>$candidate+['cvd'=>$metrics['cvd'],'cvd_divergence'=>$metrics['cvd_divergence'],
-                    'absorption'=>$metrics['absorption_evidence'],'footprint'=>$features,'footprint_status'=>'matched',
+                    'absorption'=>$metrics['absorption_evidence'],'footprint'=>$features,
+                    'footprint_status'=>'authoritative','price_source'=>'GC_futures','broker_comparison'=>$comparison,
                     'h1_trend'=>$trend['direction'],'with_h1_trend'=>$trend['direction']===$candidate['direction'],
                     'strict_risk_limit'=>config('orderflow.live_max_stop_points',5),
                     'strict_risk_passed'=>$risk<=config('orderflow.live_max_stop_points',5),
-                    'levels_basis'=>'Signal M5 close; stop beyond signal candle plus configured buffer',
+                    'levels_basis'=>'GC futures footprint close; stop beyond the GC signal candle plus configured buffer',
                     'entry_approved'=>false,'observed_at'=>$now]]);
             $recorded[$opportunity->id]=$opportunity;
         }
@@ -64,8 +70,9 @@ class VariableOpportunityService
 
     public function historical(string $date,bool $send=false): array
     {
-        $rows=$this->record($this->replay->archive('broker',$date),$this->replay->archive('footprint',$date),
-            app(HourlyPriceHistoryService::class)->bars(500),true);
+        $footprints=array_map(fn($bar)=>app(FootprintService::class)->analysisBar($bar),
+            $this->replay->archive('footprint',$date));
+        $rows=$this->record($this->replay->archive('broker',$date),$footprints,$this->footprintH1(),true);
         $sent=0;
         if($send)foreach($rows as $row)if($this->notify($row,true))$sent++;
         return ['recorded'=>count($rows),'sent'=>$sent,'ids'=>array_map(fn($r)=>$r->id,$rows)];
@@ -74,23 +81,27 @@ class VariableOpportunityService
     public function live(): array
     {
         if(!config('orderflow.variable_opportunities_enabled'))return ['status'=>'disabled','recorded'=>0,'sent'=>0];
-        $market=app(MarketDataService::class);
-        $raw=$market->bars('5m',300);
-        $history=array_map(fn($b)=>json_decode($b,true),$raw);
-        $latest=$history[0]??null;
-        $snapshot=app(FootprintService::class)->snapshot(config('clusterdelta.instrument','GC'),'5m');
-        if(!$latest||!$this->fresh($latest['received_at']??0)||!$snapshot||!$this->fresh($snapshot['received_at']??0)){
-            return ['status'=>'waiting_for_fresh_m5_and_footprint','recorded'=>0,'sent'=>0];
-        }
-        $history=array_values(array_filter($history,fn($b)=>($b['closed']??false)&&$b['time']+300<=now()->timestamp));
-        if(count($history)<20)return ['status'=>'waiting_for_20_m5_bars','recorded'=>0,'sent'=>0];
-        $frames=array_map(fn($b)=>$b+['tick_size'=>$snapshot['tick_size']],$snapshot['bars']);
-        $rows=$this->record($history,$frames,app(HourlyPriceHistoryService::class)->bars(500),false);
+        $footprints=app(FootprintService::class);
+        $snapshot=$footprints->snapshot(config('clusterdelta.instrument','GC'),'5m');
+        if(!$snapshot||!$this->fresh($snapshot['received_at']??0))
+            return ['status'=>'waiting_for_fresh_footprint','recorded'=>0,'sent'=>0];
+        $frames=$footprints->bars('5m',300);
+        $minimum=(int)config('orderflow.participation_min_samples',10)+1;
+        if(count(array_filter($frames,fn($b)=>($b['closed']??false)))<$minimum)
+            return ['status'=>'waiting_for_'.$minimum.'_footprint_bars','recorded'=>0,'sent'=>0];
+        $broker=array_map(fn($raw)=>json_decode($raw,true),app(MarketDataService::class)->storedBars('5m',300));
+        $rows=$this->record($broker,$frames,$this->footprintH1(),false);
         $sent=0;
         foreach($rows as $row){
             if(!$row->historical&&$this->notify($row))$sent++;
         }
         return ['status'=>'watching','recorded'=>count($rows),'sent'=>$sent];
+    }
+
+    private function footprintH1(): array
+    {
+        return array_values(array_filter(app(FootprintService::class)->bars('1h',500),
+            fn($bar)=>($bar['closed']??false)===true));
     }
 
     /** Database claim plus delivery log prevents overlapping watcher processes sending twice. */
@@ -131,9 +142,9 @@ class VariableOpportunityService
         $deltaMarker=$positive?'🟢 ▲':'🔴 ▼';
         $volume=(float)($row->evidence['volume']??0);
 
-        return sprintf("<b>%s · %s</b>\n%s %s: <b>%+.1f%%</b>\n📊 Volume: <b>%s</b>\nConfluence: <b>%d%%</b>\nSL: <code>%.2f</code>\nTP1: <code>%.2f</code>\nTP2: <code>%.2f</code>",
+        return sprintf("<b>%s · %s</b>\n%s %s: <b>%+.1f%%</b>\n📊 Volume: <b>%s</b>\nConfluence: <b>%d%%</b>\nEntry: <code>%.2f</code>\nSL: <code>%.2f</code>\nTP1: <code>%.2f</code>\nTP2: <code>%.2f</code>",
             $instrument,$title,$deltaMarker,$deltaLabel,$row->delta_pct,number_format($volume,0,'.',','),
-            $row->score,$row->stop_loss,$row->tp1,$row->tp2);
+            $row->score,$row->entry,$row->stop_loss,$row->tp1,$row->tp2);
     }
 
     private function fresh(int $received): bool

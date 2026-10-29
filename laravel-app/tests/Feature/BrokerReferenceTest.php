@@ -64,15 +64,15 @@ class BrokerReferenceTest extends TestCase
     {
         $bars=[$this->bar(0,100,1000000)];
         for($i=1;$i<=20;$i++) $bars[]=$this->bar($i,200.5,10);
-        $market=\Mockery::mock(MarketDataService::class);
-        $market->shouldReceive('bars')->andReturnUsing(fn($tf,$limit)=>array_slice(array_map('json_encode',array_reverse($bars)),0,$limit));
-        $this->app->instance(MarketDataService::class,$market);
+        $footprint=\Mockery::mock(\App\Services\FootprintService::class);
+        $footprint->shouldReceive('bars')->andReturnUsing(fn($tf,$limit)=>array_slice($bars,-$limit));
+        $this->app->instance(\App\Services\FootprintService::class,$footprint);
         // The route only reads saved markers; use an isolated database for that query.
         config(['database.default'=>'sqlite','database.connections.sqlite.database'=>':memory:']);
         \Illuminate\Support\Facades\DB::purge('sqlite');
         \Illuminate\Support\Facades\Artisan::call('migrate',['--database'=>'sqlite','--force'=>true]);
         $response=$this->getJson('/api/chart-data?tf=15m')->assertOk();
-        $metrics=app(OrderflowMetricsService::class)->compute('15m');
+        $metrics=app(OrderflowMetricsService::class)->computeFootprint('15m');
         $this->assertEquals($metrics['vwap'],$response->json('stats.vwap_price'));
         $this->assertEquals($metrics['poc'],$response->json('stats.poc_price'));
         $this->assertEquals($metrics['vwap'],array_slice($response->json('vwap'),-1)[0]['value']);

@@ -25,6 +25,7 @@ class FootprintTest extends TestCase
                 return $data['source_utc_offset_minutes'] === 180 && $bar['source_time'] === 1700010800
                     && $bar['time'] === 1700000000 && $bar['closed'] === true && $bar['source_closed'] === false;
             }));
+        Redis::shouldReceive('transaction')->once();
         $this->withToken('test-secret')->postJson('/api/clusterdelta/footprints', $payload)->assertOk();
     }
 
@@ -51,6 +52,7 @@ class FootprintTest extends TestCase
                     && $bar['poc'] === 2000.1 && $bar['closed'] === false && $bar['source_totals_match']
                     && $bar['levels'][1]['ask_imbalance'] && $bar['levels'][1]['bid_imbalance'];
             }));
+        Redis::shouldReceive('transaction')->once();
         $payload = $this->payload(); $payload['contract'] = '02.11.2026';
         $this->withToken('test-secret')->postJson('/api/clusterdelta/footprints', $payload)
             ->assertOk()->assertJsonPath('accepted', 1);

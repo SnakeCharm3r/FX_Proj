@@ -18,7 +18,7 @@ class DashboardController extends Controller
         }
         $recentSetups      = Setup::orderByDesc('created_at')->limit(6)->get();
         $initialTimeframe  = isset($selection['setup_id']) ? $activeSetup->timeframe
-            : app(\App\Services\MarketDataService::class)->activeTimeframe();
+            : app(\App\Services\FootprintService::class)->activeTimeframe();
         $metrics           = $this->getMetrics($initialTimeframe);
         $confluenceSignals = $this->getConfluenceSignals($initialTimeframe);
         $recentBars        = $this->getRecentBars($initialTimeframe);
@@ -32,8 +32,8 @@ class DashboardController extends Controller
     private function getMetrics(string $tf): array
     {
         if (config('orderflow.connector') === 'clusterdelta') {
-            if (!app(\App\Services\MarketDataService::class)->bars($tf, 1)) return [];
-            return app(\App\Services\OrderflowMetricsService::class)->compute($tf);
+            if (!app(\App\Services\FootprintService::class)->bars($tf, 1)) return [];
+            return app(\App\Services\OrderflowMetricsService::class)->computeFootprint($tf);
         }
         try { $r = Redis::get('xauusd:metrics:latest'); return $r ? json_decode($r, true) : []; }
         catch (\Exception) { return []; }
@@ -57,8 +57,7 @@ class DashboardController extends Controller
     private function getRecentBars(string $tf): array
     {
         try {
-            $raw = app(\App\Services\MarketDataService::class)->bars($tf, 20);
-            $bars = array_map(fn($b) => json_decode($b, true), $raw);
+            $bars = app(\App\Services\FootprintService::class)->bars($tf, 20);
             $setups = Setup::where('source', config('orderflow.connector'))
                 ->where('instrument', config('clusterdelta.instrument', 'GC'))
                 ->where('timeframe', $tf)->whereIn('candle_time', array_column($bars, 'time'))

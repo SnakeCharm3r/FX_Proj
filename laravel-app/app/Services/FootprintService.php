@@ -11,6 +11,41 @@ class FootprintService
         return "clusterdelta:footprint:{$instrument}:{$tf}:latest";
     }
 
+    public function historyKey(string $instrument,string $tf): string
+    {
+        return "clusterdelta:footprint:{$instrument}:{$tf}:history";
+    }
+
+    /** Chronological, internally validated native footprint bars for strategy evaluation. */
+    public function bars(string $tf,int $limit=300): array
+    {
+        $instrument=config('clusterdelta.instrument','GC');$key=$this->historyKey($instrument,$tf);
+        try{$times=array_reverse(Redis::zrevrange($key.':times',0,$limit-1));}
+        catch(\Throwable){return [];}
+        if(!$times)return [];
+        return array_values(array_filter(array_map(fn($raw)=>json_decode($raw?:'',true),
+            Redis::hmget($key.':values',...$times)),fn($bar)=>is_array($bar)));
+    }
+
+    public function activeTimeframe(): string
+    {
+        $best='15m';$receipt=0;
+        foreach(config('orderflow.timeframes',['1m','5m','15m','30m','1h','4h','1d']) as $tf){
+            try{$snapshot=$this->snapshot(config('clusterdelta.instrument','GC'),$tf);}catch(\Throwable){$snapshot=null;}
+            if((int)($snapshot['received_at']??0)>$receipt){$best=$tf;$receipt=(int)$snapshot['received_at'];}
+        }
+        return $best;
+    }
+
+    public function analysisBar(array $bar,int $receivedAt=0,float $tick=.1): array
+    {
+        return $bar+['buy_vol'=>(float)($bar['ask']??0),'sell_vol'=>(float)($bar['bid']??0),
+            'volume'=>(float)($bar['volume']??(($bar['ask']??0)+($bar['bid']??0))),
+            'delta'=>(float)($bar['delta']??(($bar['ask']??0)-($bar['bid']??0))),
+            'received_at'=>$bar['received_at']??$receivedAt,'source'=>'clusterdelta_footprint',
+            'price_source'=>'GC_futures','tick_size'=>$bar['tick_size']??$tick];
+    }
+
     public function enrich(array $bar, float $tick): array
     {
         usort($bar['levels'], fn ($a, $b) => $a['price'] <=> $b['price']);

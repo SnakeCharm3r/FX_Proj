@@ -25,6 +25,13 @@ class OrderflowMetricsService
         return $this->computeFromBars(array_reverse($bars), $timeframe, $lookback);
     }
 
+    /** Metrics for user-facing charts, sourced solely from validated native footprint bars. */
+    public function computeFootprint(string $timeframe,int $lookback=20,bool $closedOnly=false): array
+    {
+        $limit=max($lookback+($closedOnly?1:0),(int)config('orderflow.participation_history_bars',300));
+        return $this->computeFromBars(app(FootprintService::class)->bars($timeframe,$limit),$timeframe,$lookback,$closedOnly);
+    }
+
     /** Compute the live metrics against an explicit chronological history for reproducible replay. */
     public function computeFromBars(array $history, string $timeframe = '5m', int $lookback = 20,
         bool $closedOnly = false): array

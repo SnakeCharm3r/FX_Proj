@@ -75,6 +75,15 @@ class FootprintController extends ClusterDeltaController
         $data['price_source'] = 'GC_futures';
         $data['received_at'] = now()->timestamp;
         Redis::setex($footprint->key($data['instrument'], $data['tf']), 604800, json_encode($data));
+        $historyKey=$footprint->historyKey($data['instrument'],$data['tf']);
+        Redis::transaction(function($redis)use($data,$historyKey,$footprint){
+            foreach($data['bars'] as $bar){
+                $bar=$footprint->analysisBar($bar,$data['received_at'],(float)$data['tick_size']);
+                $redis->hset($historyKey.':values',(string)$bar['time'],json_encode($bar));
+                $redis->zadd($historyKey.':times',$bar['time'],(string)$bar['time']);
+            }
+            $redis->expire($historyKey.':values',604800);$redis->expire($historyKey.':times',604800);
+        });
         app(\App\Services\ResearchArchiveService::class)->record('footprint', $data);
         return response()->json(['ok' => true, 'accepted' => count($data['bars'])]);
     }

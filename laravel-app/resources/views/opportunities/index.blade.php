@@ -11,6 +11,7 @@
     <form id="op-date-form" class="d-flex gap-2 align-items-center"><label class="small" for="op-date">Trading date</label><input type="date" id="op-date" class="form-control form-control-sm" value="{{ request('date',now('Africa/Dar_es_Salaam')->format('Y-m-d')) }}"><button class="btn btn-sm btn-warning">View</button></form>
 </div>
 <div id="op-status" class="op-copy mb-2" role="status">Checking saved candidates and live feed…</div>
+<label class="small mb-3">Chart prices <select id="op-price-source" class="form-select form-select-sm"><option value="mt5_broker">MT5 XAUUSD · broker candles</option><option value="GC_futures">GC futures · native footprint candles</option></select></label>
 <div class="d-flex flex-wrap gap-3 mb-3 small">
     <label style="color:var(--green-bull)"><input id="op-buy" type="checkbox" checked> BUY</label><label style="color:var(--red-bear)"><input id="op-sell" type="checkbox" checked> SELL</label>
     @foreach([25,50,75,100] as $score)<label><input class="op-tier" type="checkbox" value="{{ $score }}" checked> {{ $score }}% rules</label>@endforeach
@@ -18,7 +19,7 @@
 </div>
 <div class="op-layout">
     <div>
-        <div class="card-panel mb-3"><div class="card-header-custom"><span>XAUUSD · 5 MIN · opportunities</span><span id="op-period">EAT</span></div><div id="op-chart"></div><div class="p-3 op-copy">Arrows mark completed signal candles. Selecting an arrow or sidebar item plots its entry, SL, TP1 and TP2. Rule completion is not a win probability.</div></div>
+        <div class="card-panel mb-3"><div class="card-header-custom"><span id="op-chart-title">MT5 XAUUSD · 5 MIN · GC orderflow opportunities</span><span id="op-period">EAT</span></div><div id="op-chart"></div><div class="p-3 op-copy" id="op-chart-basis">Broker candles show MT5 prices. Opportunity arrows use GC footprint evidence matched by candle time. Native GC risk levels appear only on the GC chart.</div></div>
         <div class="card-panel p-3"><div class="small fw-semibold mb-2">Why an arrow appears</div><div class="op-copy">25%: participation increased with directional delta. 50%: participation increased at an H1 zone. 75%: completed absorption without a matching H1 zone. 100%: absorption at a matching H1 zone. The candidate stream has its own Telegram notifications; the strict trade strategy still has its additional confirmation and risk checks.</div></div>
     </div>
     <aside class="card-panel"><div class="card-header-custom"><span>Entry candidates</span><span id="op-count">0</span></div><div class="op-list" id="op-list"></div>
@@ -53,15 +54,18 @@
         put('op-title',o.direction+' opportunity · '+o.score+'% rules');document.getElementById('op-title').style.color=o.direction==='BUY'?'var(--green-bull)':'var(--red-bear)';
         put('op-selected-time',eat(o.candle_time)+' → '+eat(o.candle_time+300).slice(-5)+' EAT · '+(o.historical?'Historical replay':'Live observation'));
         const grid=document.getElementById('op-values');grid.replaceChildren();
-        for(const [label,value] of [['Entry',fmt(o.entry)],['SL',fmt(o.stop_loss)],['TP1',fmt(o.tp1)],['TP2',fmt(o.tp2)],['Delta',fmt(o.evidence.delta,0)+' / '+(o.delta_pct>0?'+':'')+fmt(o.delta_pct,1)+'%'],['Total volume',fmt(o.evidence.volume,0)],['Volume / normal',fmt(o.evidence.volume_ratio,2)+'×'],['H1 trend',o.evidence.h1_trend],['H1 zone',o.evidence.zone_type||'None'],['CVD',fmt(o.evidence.cvd,0)]]){
+        const nativeGC=o.evidence.price_source==='GC_futures';
+        const levelPrefix=nativeGC?'GC ':'MT5 ';
+        for(const [label,value] of [[levelPrefix+'Entry',fmt(o.entry)],[levelPrefix+'SL',fmt(o.stop_loss)],[levelPrefix+'TP1',fmt(o.tp1)],[levelPrefix+'TP2',fmt(o.tp2)],['Delta',fmt(o.evidence.delta,0)+' / '+(o.delta_pct>0?'+':'')+fmt(o.delta_pct,1)+'%'],['Total volume',fmt(o.evidence.volume,0)],['Volume / normal',fmt(o.evidence.volume_ratio,2)+'×'],['H1 trend',o.evidence.h1_trend],['H1 zone',o.evidence.zone_type||'None'],['CVD',fmt(o.evidence.cvd,0)]]){
             const box=document.createElement('div'),l=document.createElement('div'),v=document.createElement('div');l.className='label';l.textContent=label;v.className='value';v.textContent=value;box.append(l,v);grid.appendChild(box);
         }
         put('op-reason',o.evidence.finding);
-        const fp=o.evidence.footprint;put('op-support','Matched GC footprint · buy stack '+fp.footprint_bull_stack+' / sell '+fp.footprint_bear_stack+' · POC '+fp.poc_rejection+'. CVD divergence: '+o.evidence.cvd_divergence+'.');
-        put('op-risk','Stop distance '+fmt(o.risk_points)+' points · '+(o.evidence.strict_risk_passed?'within':'above')+' strict '+fmt(o.evidence.strict_risk_limit,1)+'-point limit. Levels use the signal candle; strict entry approval is separate.');
+        const fp=o.evidence.footprint,bc=o.evidence.broker_comparison||{};put('op-support','Authoritative GC footprint · buy stack '+fp.footprint_bull_stack+' / sell '+fp.footprint_bear_stack+' · POC '+fp.poc_rejection+'. CVD divergence: '+o.evidence.cvd_divergence+'. MT5 comparison: '+(bc.status==='available'?(bc.broker_fresh?'fresh':'delayed'):'unavailable')+'.');
+        put('op-risk','GC stop distance '+fmt(o.risk_points)+' points · '+(o.evidence.strict_risk_passed?'within':'above')+' strict '+fmt(o.evidence.strict_risk_limit,1)+'-point limit. Levels are GC futures references; strict entry approval is separate.');
         put('op-delivery','Telegram: '+o.telegram_status.replaceAll('_',' '));
         for(const l of lines)series.removePriceLine(l);lines=[];
-        for(const [title,price,color] of [['Entry',o.entry,'#f5c842'],['SL',o.stop_loss,'#ff3b5c'],['TP1',o.tp1,'#00c076'],['TP2',o.tp2,'#48c6ac']])lines.push(series.createPriceLine({price,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title}));
+        if((nativeGC?'GC_futures':'mt5_broker')===report.price_source)
+            for(const [title,price,color] of [['Entry',o.entry,'#f5c842'],['SL',o.stop_loss,'#ff3b5c'],['TP1',o.tp1,'#00c076'],['TP2',o.tp2,'#48c6ac']])lines.push(series.createPriceLine({price,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title}));
         if(scroll)chart.timeScale().setVisibleRange({from:o.candle_time-24*300,to:o.candle_time+24*300});
     }
     function render(){
@@ -80,7 +84,12 @@
     async function refresh(){
         if(busy)return;busy=true;const c=new AbortController(),timer=setTimeout(()=>c.abort(),15000);
         try{
-            const r=await fetch('/api/variable-opportunities?date='+encodeURIComponent(document.getElementById('op-date').value),{cache:'no-store',signal:c.signal});if(!r.ok)throw Error('Unavailable');report=await r.json();series.setData(report.candles);render();
+            const source=document.getElementById('op-price-source').value;
+            const r=await fetch('/api/variable-opportunities?date='+encodeURIComponent(document.getElementById('op-date').value)+'&price_source='+source,{cache:'no-store',signal:c.signal});if(!r.ok)throw Error('Unavailable');
+            if(source!==document.getElementById('op-price-source').value)return;
+            report=await r.json();series.setData(report.candles);render();
+            put('op-chart-title',report.price_source==='mt5_broker'?'MT5 XAUUSD · 5 MIN · GC orderflow opportunities':'GC FUTURES · 5 MIN · footprint opportunities');
+            put('op-chart-basis',(report.price_source==='mt5_broker'?'Original MT5 broker candles. GC opportunity arrows match candle time; GC risk levels are shown in the sidebar only.':'Native GC futures candles and GC risk levels.')+' Chart '+(report.chart_fresh?'receiving':'stale / historical')+(report.chart_received_at?' · received '+new Date(report.chart_received_at*1000).toLocaleTimeString():'')+'.');
             put('op-period',eat(report.period_start)+'–'+eat(report.period_end)+' EAT');
             put('op-status',report.summary.total+' candidates · '+report.summary.buy+' BUY / '+report.summary.sell+' SELL · Telegram '+(report.telegram_enabled&&report.enabled?'enabled':'disabled')+' · '+(report.feed_fresh?'M5 feed receiving':'viewing saved history; waiting for fresh M5 feed'));
             if(first&&report.candles.length){chart.timeScale().fitContent();first=false;}
@@ -89,6 +98,7 @@
     chart.subscribeClick(p=>{if(!p.time)return;const o=visible().find(o=>o.candle_time===p.time);if(o)focus(o.id);});
     document.getElementById('op-date-form').addEventListener('submit',e=>{e.preventDefault();first=true;selected=null;refresh();});
     document.getElementById('op-reset').addEventListener('click',()=>chart.timeScale().fitContent());
+    document.getElementById('op-price-source').addEventListener('change',()=>{first=true;clearDetails();series.setData([]);refresh();});
     for(const e of document.querySelectorAll('.op-tier,#op-buy,#op-sell'))e.addEventListener('change',render);
     new ResizeObserver(()=>chart.resize(host.clientWidth,host.clientHeight)).observe(host);
     refresh();setInterval(refresh,10000);

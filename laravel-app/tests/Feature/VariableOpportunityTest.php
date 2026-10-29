@@ -36,12 +36,39 @@ class VariableOpportunityTest extends TestCase
         return $bars;
     }
 
+    public function test_chart_uses_real_broker_prices_and_can_select_native_gc_without_fallback(): void
+    {
+        $time=intdiv(now()->timestamp,300)*300;
+        $fpBar=['time'=>$time,'open'=>4009,'high'=>4011,'low'=>4008,'close'=>4009.1,'received_at'=>now()->timestamp];
+        $brokerBar=array_merge($fpBar,['open'=>3997,'high'=>3999,'low'=>3996,'close'=>3997.899,'price_source'=>'mt5_broker']);
+        $replay=\Mockery::mock(\App\Services\StrategyDryRunService::class);
+        $replay->shouldReceive('archive')->andReturn([]);
+        $this->app->instance(\App\Services\StrategyDryRunService::class,$replay);
+        $fp=\Mockery::mock(FootprintService::class);$fp->shouldReceive('bars')->andReturn([$fpBar]);
+        $this->app->instance(FootprintService::class,$fp);
+        $market=\Mockery::mock(MarketDataService::class);
+        $market->shouldReceive('storedBars')->once()->andReturn([json_encode($brokerBar)]);
+        $market->shouldReceive('storedBars')->once()->andReturn([]);
+        $this->app->instance(MarketDataService::class,$market);
+        $url='/api/variable-opportunities?date='.gmdate('Y-m-d',$time);
+        $this->getJson($url)->assertOk()->assertJsonPath('price_source','mt5_broker')
+            ->assertJsonPath('candles.0.close',3997.899)->assertJsonPath('feed_fresh',true);
+        $this->getJson($url.'&price_source=GC_futures')->assertOk()->assertJsonPath('candles.0.close',4009.1);
+        $this->getJson($url)->assertOk()->assertJsonPath('candles',[])
+            ->assertJsonPath('chart_fresh',false)->assertJsonPath('feed_fresh',true);
+    }
+
     private function frame(array $bar): array
     {
-        return ['time'=>$bar['time'],'closed'=>true,'open'=>2101,'high'=>2104,'low'=>2098,'close'=>2103,
-            'volume'=>200,'delta'=>40,'source_totals_match'=>true,'tick_size'=>.1,
-            'levels'=>[['price'=>2101,'ask'=>120,'bid'=>80]]];
+        return ['time'=>$bar['time'],'closed'=>$bar['closed'] ?? true,'open'=>$bar['open'],'high'=>$bar['high'],
+            'low'=>$bar['low'],'close'=>$bar['close'],'ask'=>$bar['buy_vol'],'bid'=>$bar['sell_vol'],
+            'buy_vol'=>$bar['buy_vol'],'sell_vol'=>$bar['sell_vol'],
+            'volume'=>$bar['buy_vol']+$bar['sell_vol'],'delta'=>$bar['delta'],'received_at'=>$bar['received_at'],
+            'source_totals_match'=>true,'tick_size'=>.1,
+            'levels'=>[['price'=>$bar['open'],'ask'=>$bar['buy_vol'],'bid'=>$bar['sell_vol']]]];
     }
+
+    private function frames(array $bars): array { return array_map(fn($bar)=>$this->frame($bar),$bars); }
 
     private function h1(): array
     {
@@ -55,7 +82,7 @@ class VariableOpportunityTest extends TestCase
     {
         $alerts=\Mockery::mock(AlertDispatchService::class);$alerts->shouldNotReceive('dispatch');
         $this->app->instance(AlertDispatchService::class,$alerts);
-        $bars=$this->history();$frames=[$this->frame(end($bars))];$service=app(VariableOpportunityService::class);
+        $bars=$this->history();$frames=$this->frames($bars);$service=app(VariableOpportunityService::class);
         $first=$service->record($bars,$frames,[],true);$second=$service->record($bars,$frames,[],true);
         $this->assertCount(1,$first);$this->assertSame(25,$first[0]->score);
         $this->assertSame(20.0,$first[0]->delta_pct);$this->assertSame($first[0]->id,$second[0]->id);
@@ -67,7 +94,7 @@ class VariableOpportunityTest extends TestCase
     public function test_same_h1_zone_as_replay_records_50_percent_without_enforcing_the_strict_risk_gate(): void
     {
         config(['orderflow.live_max_stop_points'=>2]);
-        $bars=$this->history();$rows=app(VariableOpportunityService::class)->record($bars,[$this->frame(end($bars))],$this->h1(),false);
+        $bars=$this->history();$rows=app(VariableOpportunityService::class)->record($bars,$this->frames($bars),$this->h1(),false);
         $this->assertCount(1,$rows);$row=$rows[0];$this->assertSame(50,$row->score);
         $this->assertSame('DEMAND',$row->evidence['zone_type']);$this->assertFalse($row->evidence['strict_risk_passed']);
         $this->assertSame('pending',$row->telegram_status);$this->assertSame(103.0,$row->entry);
@@ -82,7 +109,7 @@ class VariableOpportunityTest extends TestCase
             'stage'=>'confirmed','reason'=>'Test absorption sequence','effort_time'=>$time-600,'effort_low'=>98,
             'effort_high'=>102,'rejection_low'=>98,'rejection_high'=>102]);
         $this->app->instance(AbsorptionSequenceService::class,$abs);
-        $service=app(VariableOpportunityService::class);$frames=[$this->frame(end($bars))];
+        $service=app(VariableOpportunityService::class);$frames=$this->frames($bars);
         $rows=$service->record($bars,$frames,[],true);$this->assertSame(75,$rows[0]->score);
         VariableOpportunity::query()->delete();
         $rows=$service->record($bars,$frames,$this->h1(),true);$this->assertSame(100,$rows[0]->score);
@@ -90,18 +117,18 @@ class VariableOpportunityTest extends TestCase
 
     public function test_stale_future_developing_and_mismatched_data_do_not_create_live_candidates(): void
     {
-        $bars=$this->history();$frame=$this->frame(end($bars));$service=app(VariableOpportunityService::class);
-        $bad=$bars;$bad[20]['received_at']=now()->timestamp-120;
-        $this->assertSame([],$service->record($bad,[$frame],[],false));
-        $bad=$bars;$bad[20]['time']=now()->timestamp+300;
-        $this->assertSame([],$service->record($bad,[array_merge($frame,['time'=>$bad[20]['time']])],[],false));
-        $bad=$bars;$bad[20]['closed']=false;$this->assertSame([],$service->record($bad,[$frame],[],false));
-        $this->assertSame([],$service->record($bars,[array_merge($frame,['delta'=>41])],[],false));
-        $this->assertSame([],$service->record($bars,[array_merge($frame,['source_totals_match'=>false])],[],false));
+        $bars=$this->history();$frames=$this->frames($bars);$service=app(VariableOpportunityService::class);
+        $bad=$frames;$bad[20]['received_at']=now()->timestamp-120;
+        $this->assertSame([],$service->record($bars,$bad,[],false));
+        $bad=$frames;$bad[20]['time']=now()->timestamp+300;
+        $this->assertSame([],$service->record($bars,$bad,[],false));
+        $bad=$frames;$bad[20]['closed']=false;$this->assertSame([],$service->record($bars,$bad,[],false));
+        $bad=$frames;$bad[20]['source_totals_match']=false;
+        $this->assertSame([],$service->record($bars,$bad,[],false));
         $market=\Mockery::mock(MarketDataService::class);$market->shouldReceive('bars')->andReturn(array_map('json_encode',array_reverse($bars)));
-        $fp=\Mockery::mock(FootprintService::class);$fp->shouldReceive('snapshot')->andReturn(['received_at'=>now()->timestamp-120,'bars'=>[$frame]]);
+        $fp=\Mockery::mock(FootprintService::class);$fp->shouldReceive('snapshot')->andReturn(['received_at'=>now()->timestamp-120,'bars'=>$frames]);
         $this->app->instance(MarketDataService::class,$market);$this->app->instance(FootprintService::class,$fp);
-        $this->assertSame('waiting_for_fresh_m5_and_footprint',$service->live()['status']);
+        $this->assertSame('waiting_for_fresh_footprint',$service->live()['status']);
         $this->assertSame(0,VariableOpportunity::count());
     }
 
@@ -120,7 +147,7 @@ class VariableOpportunityTest extends TestCase
                 'message'=>$message,'status'=>'sent']);
         });
         $this->app->instance(AlertDispatchService::class,$alerts);$service=app(VariableOpportunityService::class);
-        $row=$service->record($bars,[$this->frame(end($bars))],[],false)[0];
+        $row=$service->record($bars,$this->frames($bars),[],false)[0];
         $this->assertTrue($service->notify($row));$this->assertFalse($service->notify($row->fresh()));
         $this->assertSame('sent',$row->fresh()->telegram_status);$this->assertSame(1,AlertLog::count());
         $this->assertStringContainsString('GC · Historical Buy opportunity',$service->message($row,true));

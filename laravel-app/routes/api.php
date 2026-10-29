@@ -73,18 +73,12 @@ Route::post('/metrics', function (\Illuminate\Http\Request $request) {
 /* ── Frontend → chart candles ── */
 Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
     $tf     = $request->get('tf', '15m');
-    $raw    = $tf === '1h' && config('orderflow.connector') === 'clusterdelta'
-        ? array_map(fn ($bar)=>json_encode($bar), app(\App\Services\HourlyPriceHistoryService::class)->bars(500))
-        : app(\App\Services\MarketDataService::class)->bars($tf, 200);
-    $parsed = array_reverse(array_map(function ($b) {
-        $decoded = json_decode($b, true);
-        // Python redis-py stores strings as JSON-encoded strings ("\"{ }\"")
-        // so we may need a second decode pass
-        return is_string($decoded) ? json_decode($decoded, true) : $decoded;
-    }, $raw));
+    $parsed = app(\App\Services\FootprintService::class)->bars($tf,200);
 
     if (empty($parsed)) {
-        return response()->json(['candles'=>[],'volume'=>[],'setups'=>[],'vwap'=>[],'poc'=>[],'high_vol_markers'=>[]]);
+        return response()->json(['price_source'=>'GC_futures','candles'=>[],'volume'=>[],'setups'=>[],'vwap'=>[],'poc'=>[],'high_vol_markers'=>[],
+            'stats'=>['price_source'=>'GC_futures','reference_price_source'=>'GC_futures','bar_count'=>0,
+                'price_only_bars'=>0,'last_bar_time'=>null,'last_received'=>null]]);
     }
 
     // ── Volume stats for high-volume detection ──────────────────────────
@@ -92,7 +86,7 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
     $avgVol  = count($volumes) > 0 ? array_sum($volumes) / count($volumes) : 0;
     $volMultiplier = (float) $request->get('vol_mult', 2.0); // bars > 2× avg = high volume
 
-    // Use the same rolling broker-price estimates as the metric cards.
+    // Use the same rolling native-GC estimates as the metric cards.
     $references = app(\App\Services\BrokerReferenceService::class)->series($parsed, 20);
     $vwapLine = $references['vwap'];
     $pocLine = $references['poc'];
@@ -151,6 +145,7 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
         ]);
 
     return response()->json([
+        'price_source'     => 'GC_futures',
         'candles'          => $candles,
         'volume'           => $volume,
         'vwap'             => $vwapLine,
@@ -163,7 +158,8 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
             'vwap_price' => $references['latest']['vwap'],
             'reference_lookback' => $references['lookback'],
             'reference_window_bars' => $references['window_bars'],
-            'reference_price_source' => 'mt5_broker',
+            'reference_price_source' => 'GC_futures',
+            'price_source' => 'GC_futures',
             'vwap_method' => 'rolling_typical_price_volume_weighted',
             'poc_method' => 'rolling_close_volume_proxy',
             'bar_count'  => count($parsed),
@@ -179,11 +175,11 @@ Route::get('/chart-data', function (\Illuminate\Http\Request $request) {
 /* ── Frontend → orderflow data ── */
 Route::get('/orderflow/delta', function (\Illuminate\Http\Request $request) {
     $tf     = $request->get('tf', '15m');
-    $parsed = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, app(\App\Services\MarketDataService::class)->bars($tf, 100)));
+    $parsed = app(\App\Services\FootprintService::class)->bars($tf,100);
     $delta  = array_map(fn($b) => ['time' => $b['time'] ?? 0, 'delta' => $b['delta'] ?? 0], $parsed);
     $cvd    = []; $cum = 0;
     foreach ($parsed as $b) { $cum += ($b['delta'] ?? 0); $cvd[] = ['time' => $b['time'] ?? 0, 'value' => $cum]; }
-    return response()->json(compact('delta', 'cvd'));
+    return response()->json(compact('delta', 'cvd')+['price_source'=>'GC_futures']);
 });
 
 Route::get('/orderflow/imbalance', function (\Illuminate\Http\Request $request, \App\Services\FootprintService $footprint) {
@@ -193,12 +189,12 @@ Route::get('/orderflow/imbalance', function (\Illuminate\Http\Request $request, 
 
 Route::get('/orderflow/cvd', function (\Illuminate\Http\Request $request) {
     $tf      = $request->get('tf', '15m');
-    $parsed  = array_reverse(array_map(function($b){$d=json_decode($b,true);return is_string($d)?json_decode($d,true):$d;}, app(\App\Services\MarketDataService::class)->bars($tf, 200)));
+    $parsed  = app(\App\Services\FootprintService::class)->bars($tf,200);
     $candles = array_map(fn($b) => ['time'=>$b['time']??0,'open'=>$b['open']??0,'high'=>$b['high']??0,'low'=>$b['low']??0,'close'=>$b['close']??0], $parsed);
     $cvd     = []; $cum = 0;
     foreach ($parsed as $b) { $cum += ($b['delta'] ?? 0); $cvd[] = ['time' => $b['time']??0, 'value' => $cum]; }
     $summary = ['cvd' => $cum, 'divergence' => 'NONE', 'trend' => $cum >= 0 ? 'UP' : 'DOWN'];
-    return response()->json(compact('candles', 'cvd', 'summary'));
+    return response()->json(compact('candles', 'cvd', 'summary')+['price_source'=>'GC_futures']);
 });
 
 /* ── Setups ── */
@@ -223,19 +219,21 @@ Route::get('/setups/export',   function () {
 Route::post('/alerts/test', [AlertController::class,  'test']);
 Route::post('/settings',    [SettingsController::class,'update']);
 
-Route::get('/feed-status', function (\Illuminate\Http\Request $request, \App\Services\MarketDataService $marketData) {
+Route::get('/feed-status', function (\Illuminate\Http\Request $request, \App\Services\FootprintService $footprint) {
     $data = $request->validate(['tf' => ['sometimes', \Illuminate\Validation\Rule::in(['1m', '5m', '15m', '30m', '1h', '4h', '1d'])]]);
-    $tf = $data['tf'] ?? $marketData->activeTimeframe();
-    $raw = $marketData->bars($tf, 1);
-    $bar = $raw ? json_decode($raw[0], true) : null;
+    $tf = $data['tf'] ?? $footprint->activeTimeframe();
+    $bars=$footprint->bars($tf,1);$bar=$bars?end($bars):null;
     $fresh = $bar && now()->timestamp - ($bar['received_at'] ?? 0) < 60;
-    return response()->json(['source' => config('orderflow.connector'),
+    try { $brokerQuote=app(\App\Services\MarketDataService::class)->latestBrokerQuote(); }
+    catch(\Throwable) { $brokerQuote=null; }
+    return response()->json(['source' => 'clusterdelta_footprint','price_source'=>'GC_futures',
         'instrument' => config('clusterdelta.instrument'), 'connected' => (bool) $fresh,
         'timeframe' => $tf,
         'has_data' => $bar !== null,
         'status' => !$bar ? 'waiting_for_first_bar' : ($fresh ? 'receiving' : 'stale'),
         'last_received' => $bar['received_at'] ?? null, 'price' => $bar['close'] ?? null,
-        'metrics' => $bar ? app(\App\Services\OrderflowMetricsService::class)->compute($tf) : null]);
+        'broker_quote'=>$brokerQuote ? array_intersect_key($brokerQuote,array_flip(['close','time','timeframe','received_at','price_source'])) : null,
+        'metrics' => $bar ? app(\App\Services\OrderflowMetricsService::class)->computeFootprint($tf) : null]);
 });
 
 Route::get('/orderflow/participation', function (\Illuminate\Http\Request $request) {

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\MarketDataService;
+use App\Services\FootprintService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,10 +16,10 @@ class ExampleTest extends TestCase
      */
     public function test_the_application_returns_a_successful_response(): void
     {
-        $market = \Mockery::mock(MarketDataService::class);
-        $market->shouldReceive('activeTimeframe')->once()->andReturn('15m');
-        $market->shouldReceive('bars')->andReturn([]);
-        $this->app->instance(MarketDataService::class, $market);
+        $footprint = \Mockery::mock(FootprintService::class);
+        $footprint->shouldReceive('activeTimeframe')->once()->andReturn('15m');
+        $footprint->shouldReceive('bars')->andReturn([]);
+        $this->app->instance(FootprintService::class, $footprint);
 
         $response = $this->get('/');
 

@@ -157,9 +157,14 @@ class StrategyDryRunService
             $bytes=file_get_contents($file);$json=$bytes===false?false:gzdecode($bytes);
             $decoded=$json===false?null:json_decode($json,true);
             if(!is_array($decoded)||!isset($decoded['bar']['time'])) continue;
-            $time=(int)$decoded['bar']['time'];$observed=(int)($decoded['first_observed_at']??0);
-            if(isset($latest[$time]) && $latest[$time]['observed']>$observed) continue;
             $bar=$decoded['bar'];
+            // Re-normalize archived footprint source timestamps with the current
+            // configured source clock. This avoids preserving an earlier offset
+            // mistake in research charts and replays.
+            if($kind==='footprint'&&isset($bar['source_time']))
+                $bar['time']=(int)$bar['source_time']-(int)config('clusterdelta.footprint_utc_offset_minutes',0)*60;
+            $time=(int)$bar['time'];$observed=(int)($decoded['first_observed_at']??0);
+            if(isset($latest[$time]) && $latest[$time]['observed']>$observed) continue;
             if($kind==='broker'){
                 $volume=(int)$bar['volume'];$delta=(int)$bar['delta'];
                 $bar['buy_vol']=($volume+$delta)/2;$bar['sell_vol']=($volume-$delta)/2;$bar['closed']=true;

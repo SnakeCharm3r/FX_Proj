@@ -32,7 +32,7 @@
   <button id="fp-refresh" class="btn btn-sm btn-outline-warning" type="button">Refresh</button>
  </div>
 </div>
-<div class="card-panel p-3 mb-3" role="status" aria-live="polite"><div id="fp-status">Checking footprint feed…</div><small id="fp-source" style="color:var(--text-muted-custom)">GC futures prices are separate from broker XAUUSD prices.</small></div>
+<div class="card-panel p-3 mb-3" role="status" aria-live="polite"><div id="fp-status">Checking footprint feed…</div><small id="fp-source" style="color:var(--text-muted-custom)">GC futures prices are separate from broker XAUUSD prices.</small><div id="fp-price-comparison" class="small mt-2"></div></div>
 <div class="row g-2 mb-3">
  @foreach(['volume'=>'Volume','delta'=>'Delta','poc'=>'Candle POC','delta_min'=>'Min delta','delta_max'=>'Max delta'] as $id=>$label)
  <div class="col"><div class="metric-pill"><div class="label">{{ $label }}</div><div class="value" id="fp-{{ $id }}">—</div></div></div>
@@ -122,6 +122,9 @@
    const response=await fetch('/api/orderflow/footprint?instrument=GC&tf='+encodeURIComponent(tf),{cache:'no-store'});
    if(!response.ok)throw new Error('Footprint request failed');const data=await response.json();if(tf!==tfControl.value)return;
    snapshot=data;const fresh=data.received_at && Date.now()/1000-data.received_at<60;
+   const last=data.bars.at(-1),comparison=last?.comparison,receipt=comparison?.reference_received_at;
+   const brokerFresh=receipt&&receipt<=Date.now()/1000+5&&Date.now()/1000-receipt<60;
+   document.getElementById('fp-price-comparison').textContent=last ? 'GC candle close: '+Number(last.close).toFixed(3)+(comparison ? ' · MT5 same-candle close: '+Number(comparison.broker_close).toFixed(3)+' · GC minus MT5: '+Number(comparison.price_basis).toFixed(3)+' · MT5 received '+(receipt?new Date(receipt*1000).toLocaleTimeString():'unknown')+(brokerFresh?'':' (stale/unverified)') : ' · No matching MT5 candle')+' · These are separately sampled futures and broker prices.' : '';
    const totalsMismatch=data.bars.some(b=>b.source_totals_match===false);
    document.getElementById('fp-status').textContent=!data.bars.length?'Waiting for footprint export':fresh?'Receiving real footprint cells'+(totalsMismatch?' · vendor summary differs from price-cell totals':''):'Footprint feed stale · showing last snapshot';
    document.getElementById('fp-status').style.color=fresh&&!totalsMismatch?'var(--green-bull)':'var(--gold)';

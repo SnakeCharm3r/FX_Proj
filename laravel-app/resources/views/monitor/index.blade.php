@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-center gap-3 mb-4">
     <div>
         <h5 class="mb-1"><i class="bi bi-pc-display me-2" style="color:var(--gold)"></i>System Monitor</h5>
-        <small style="color:var(--text-muted-custom)">Service status and the flow of data from MT5 to your charts.</small>
+        <small style="color:var(--text-muted-custom)">Service status and the native ClusterDelta footprint flow used by your charts.</small>
     </div>
     <button id="monitor-refresh" class="btn btn-sm btn-outline-warning" type="button"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
 </div>
@@ -31,7 +31,7 @@
 </div>
 
 <div class="card-panel mb-4">
-    <div class="card-header-custom">MT5 → local export → data forwarder → application</div>
+    <div class="card-header-custom">ClusterDelta footprint → local export → data forwarder → application</div>
     <div class="table-responsive">
         <table class="table of-table mb-0">
             <thead><tr><th>Feed</th><th>MT5 export</th><th>Last received by app</th><th>Data flow</th></tr></thead>

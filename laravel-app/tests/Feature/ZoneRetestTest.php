@@ -169,9 +169,9 @@ class ZoneRetestTest extends TestCase
         $bar=app(HourlyPriceHistoryService::class)->bars()[0];
         $this->assertSame('broker_h1_backfill',$bar['candle_source']);
         $this->assertArrayNotHasKey('delta',$bar);$this->assertArrayNotHasKey('volume',$bar);
-        $this->getJson('/api/chart-data?tf=1h')->assertOk()->assertJsonCount(1,'candles')
+        $this->getJson('/api/chart-data?tf=1h')->assertOk()->assertJsonCount(0,'candles')
             ->assertJsonCount(0,'volume')->assertJsonCount(0,'vwap')->assertJsonCount(0,'poc')
-            ->assertJsonPath('stats.price_only_bars',1);
+            ->assertJsonPath('stats.price_only_bars',0)->assertJsonPath('stats.price_source','GC_futures');
         $payload['bars'][0]['time']=strtotime('2026-10-22 10:00 UTC');
         $this->withToken('test-history-token')->postJson('/api/clusterdelta/history',$payload)->assertUnprocessable();
         $payload['bars'][0]['time']=strtotime('2026-10-01 08:00 UTC');$payload['bars'][0]['low']=106;

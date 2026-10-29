@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Redis;
 
 class SystemMonitorService
 {
-    public function __construct(private MarketDataService $marketData) {}
+    public function __construct(private MarketDataService $marketData,private ?FootprintService $footprint=null) {}
 
     public function status(): array
     {
@@ -21,14 +21,19 @@ class SystemMonitorService
 
         $feeds = [];
         foreach (['1m', '5m', '15m', '30m', '1h', '4h', '1d'] as $tf) {
-            $file = config('monitor.export_directory')."/FXClusterDelta_{$instrument}_{$tf}.json";
+            $file = config('monitor.export_directory')."/FXFootprint_{$instrument}_{$tf}.json";
             clearstatcache(true, $file);
             $modified = is_file($file) ? (@filemtime($file) ?: null) : null;
             $bar = null;
             if ($redisReady) {
                 try {
-                    $raw = $this->marketData->bars($tf, 1);
-                    $bar = $raw ? json_decode($raw[0], true) : null;
+                    if($this->footprint){
+                        $snapshot=$this->footprint->snapshot($instrument,$tf);
+                        $bar=$snapshot&&$snapshot['bars']?end($snapshot['bars']):null;
+                        if($bar)$bar['received_at']=$snapshot['received_at']??null;
+                    }else{
+                        $raw=$this->marketData->bars($tf,1);$bar=$raw?json_decode($raw[0],true):null;
+                    }
                 } catch (\Throwable) {
                     // A failed feed read must not hide the other service statuses.
                 }
@@ -54,9 +59,9 @@ class SystemMonitorService
             ['id' => 'app', 'name' => 'Application server', 'state' => 'running',
                 'detail' => 'Responded to this health check.', 'pids' => []],
             $this->service('mt5', 'MT5 terminal', $processes, $freshExport,
-                'Bridge export is updating.', 'No recent bridge export. Check MT5 and the attached bridge.'),
+                'Footprint export is updating.', 'No recent footprint export. Check MT5 and the footprint exporter.'),
             $this->service('forwarder', 'Data forwarder', $processes, $receiving,
-                'Market data is reaching the application.', 'No recent arrivals. Check the forwarder terminal.'),
+                'Native footprint data is reaching the application.', 'No recent arrivals from the footprint forwarder.'),
             ['id' => 'redis', 'name' => 'Redis storage', 'state' => $redisReady ? 'running' : 'unavailable',
                 'detail' => $redisReady ? 'Storage answered a ping.' : 'Storage did not answer. Check Redis.', 'pids' => []],
             $this->service('reverb', 'WebSocket server', $processes, false,
@@ -67,9 +72,9 @@ class SystemMonitorService
                     : 'No recent evaluation. Start php artisan orderflow:watch in its own terminal.', 'pids' => []],
         ];
         $summary = !$redisReady ? 'Redis is unavailable; incoming data cannot be read.'
-            : ($receiving ? 'Market data is reaching the application.'
+            : ($receiving ? 'Native GC footprint data is reaching the application.'
             : ($freshExport ? 'MT5 is exporting, but ingestion is stale. Check the data forwarder.'
-            : 'No fresh MT5 export. Check the terminal, bridge attachment and DLL permission.'));
+            : 'No fresh footprint export. Check MT5, FXClusterDeltaFootprint and DLL permission.'));
 
         return ['checked_at' => $now, 'healthy' => $redisReady && $receiving,
             'summary' => $summary, 'services' => $services, 'feeds' => $feeds];

@@ -62,7 +62,7 @@
     <div class="col-12 col-xl-8">
         <div class="card-panel">
             <div class="card-header-custom">
-                <span><i class="bi bi-graph-up me-1" style="color:var(--gold)"></i>XAUUSD Chart</span>
+                <span><i class="bi bi-graph-up me-1" style="color:var(--gold)"></i>GC Footprint Chart</span>
                 <div class="d-flex align-items-center gap-2">
                     <div class="btn-group btn-group-sm" id="tf-buttons">
                         @foreach(['1m','5m','15m','30m','1h','4h','1d'] as $tf)
@@ -85,7 +85,7 @@
                 <div id="tv-chart" style="height:380px;width:100%"></div>
                 <svg id="sd-zone-overlay" role="img" aria-label="1H demand and supply zones" style="position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none"></svg>
                 <div id="chart-legend" style="position:absolute;top:8px;left:12px;z-index:10;font-size:.72rem;font-family:'JetBrains Mono',monospace;pointer-events:none">
-                    <div><span style="color:#8d97b0">XAUUSD &bull; <span id="legend-tf">{{ $initialTimeframe }}</span></span>
+                    <div><span style="color:#8d97b0">GC futures &bull; native footprint &bull; <span id="legend-tf">{{ $initialTimeframe }}</span></span>
                     <span id="legend-ohlc" style="color:#aaa;margin-left:.5rem"></span></div>
                     <div id="chart-stats" style="margin-top:.2rem;font-size:.65rem"></div>
                     <div id="chart-update-status" style="margin-top:.2rem;font-size:.65rem;color:#8d97b0">Loading chart…</div>

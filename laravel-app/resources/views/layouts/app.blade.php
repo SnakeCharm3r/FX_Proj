@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'XAUUSD Orderflow') — GoldFlow Pro</title>
+    <title>@yield('title', 'GC Footprint Orderflow') — GoldFlow Pro</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -101,7 +101,7 @@
 <aside id="sidebar">
     <div class="brand">
         <span class="logo-text"><i class="bi bi-bar-chart-fill me-1" style="color:var(--gold)"></i> GoldFlow Pro</span>
-        <small>XAUUSD Orderflow Engine</small>
+        <small>GC Footprint Orderflow Engine</small>
         @if(config('orderflow.connector') === 'clusterdelta')
         <small>ClusterDelta {{ config('clusterdelta.instrument') }} · MT5 prices</small>
         @endif
@@ -145,6 +145,7 @@
         </button>
         <div>
             <div class="price-ticker" id="live-price" data-prev="0">—</div>
+            <small id="quote-source" style="color:var(--text-muted-custom)">MT5 XAUUSD · checking quote</small>
         </div>
         <div>
             <span class="price-change" id="price-change">—</span>
@@ -270,7 +271,10 @@ async function pollClusterDelta() {
         if (tf && tf !== window.GFTimeframe) return;
         document.getElementById('feed-dot').classList.toggle('off', !feed.connected);
         document.getElementById('feed-label').textContent = feed.connected ? 'ClusterDelta' : (feed.has_data ? 'Feed stale' : 'No MT5 bars');
-        if (feed.price) document.getElementById('live-price').textContent = GF.formatPrice(feed.price);
+        const quote=feed.broker_quote;
+        document.getElementById('live-price').textContent=quote ? GF.formatPrice(quote.close) : '—';
+        document.getElementById('quote-source').textContent=quote ? 'MT5 XAUUSD · '+new Date(quote.received_at*1000).toLocaleTimeString() : 'MT5 XAUUSD · no fresh quote';
+        document.getElementById('last-tick-time').textContent=feed.price ? 'GC footprint: '+GF.formatPrice(feed.price)+(feed.connected?'':' · stale') : 'GC footprint: unavailable';
         window.dispatchEvent(new CustomEvent('clusterdelta-metrics', {detail: feed}));
     } catch (_) {
         document.getElementById('feed-dot').classList.add('off');
