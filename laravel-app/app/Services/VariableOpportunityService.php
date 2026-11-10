@@ -13,7 +13,7 @@ class VariableOpportunityService
     public const LEGACY_VERSION='variable_orderflow_v1';
 
     public function __construct(private StrategyDryRunService $replay,private SetupBuilderService $levels,
-        private AlertDispatchService $alerts) {}
+        private AlertDispatchService $alerts,private SignalClassificationService $classifier) {}
 
     public function scope()
     {
@@ -47,6 +47,10 @@ class VariableOpportunityService
                 'gc_close'=>(float)$bar['close'],'price_basis'=>round((float)$bar['close']-(float)$broker['close'],8),
                 'broker_received_at'=>$broker['received_at']??null,
                 'broker_fresh'=>$this->fresh((int)($broker['received_at']??0))]:['status'=>'unavailable'];
+
+            // Classify signal with false positive and zone penetration detection
+            $classification=$this->classifier->classifySignal($bar,$prefix,$zones,$candidate['direction']);
+
             $key=hash('sha256',implode(':',[config('orderflow.connector'),config('clusterdelta.instrument','GC'),
                 '5m',self::VERSION,$time]));
             $opportunity=VariableOpportunity::firstOrCreate(['evaluation_key'=>$key],[
@@ -62,7 +66,7 @@ class VariableOpportunityService
                     'strict_risk_limit'=>config('orderflow.live_max_stop_points',5),
                     'strict_risk_passed'=>$risk<=config('orderflow.live_max_stop_points',5),
                     'levels_basis'=>'GC futures footprint close; stop beyond the GC signal candle plus configured buffer',
-                    'entry_approved'=>false,'observed_at'=>$now]]);
+                    'entry_approved'=>false,'observed_at'=>$now,'signal_classification'=>$classification]]);
             $recorded[$opportunity->id]=$opportunity;
         }
         return array_values($recorded);
@@ -142,9 +146,42 @@ class VariableOpportunityService
         $deltaMarker=$positive?'🟢 ▲':'🔴 ▼';
         $volume=(float)($row->evidence['volume']??0);
 
-        return sprintf("<b>%s · %s</b>\n%s %s: <b>%+.1f%%</b>\n📊 Volume: <b>%s</b>\nConfluence: <b>%d%%</b>\nEntry: <code>%.2f</code>\nSL: <code>%.2f</code>\nTP1: <code>%.2f</code>\nTP2: <code>%.2f</code>",
-            $instrument,$title,$deltaMarker,$deltaLabel,$row->delta_pct,number_format($volume,0,'.',','),
+        // Get signal classification
+        $classification=$row->evidence['signal_classification']??null;
+        $signalEmoji=$classification['emoji']??'ℹ️';
+        $signalType=$classification['signal_type']??'STANDARD';
+        $signalMessage=$classification['message']??'Standard opportunity';
+
+        $baseMessage=sprintf("<b>%s · %s</b>\n%s %s %s\n%s %s: <b>%+.1f%%</b>\n📊 Volume: <b>%s</b>\nConfluence: <b>%d%%</b>\nEntry: <code>%.2f</code>\nSL: <code>%.2f</code>\nTP1: <code>%.2f</code>\nTP2: <code>%.2f</code>",
+            $instrument,$title,$signalEmoji,$signalType,$signalMessage,$deltaMarker,$deltaLabel,$row->delta_pct,number_format($volume,0,'.',','),
             $row->score,$row->entry,$row->stop_loss,$row->tp1,$row->tp2);
+
+        // Add additional context from classification
+        if($classification){
+            $additional='';
+            if($classification['zone_penetration']['detected']??false){
+                $zp=$classification['zone_penetration'];
+                $additional.=sprintf("\n📍 Zone %s: %.2f-%.2f (penetration: %.1f%%)",
+                    strtolower($zp['zone_type']??''),
+                    $zp['zone_low']??0,
+                    $zp['zone_high']??0,
+                    $zp['penetration_depth_pct']??0
+                );
+            }
+            if($classification['false_positive']['is_false_positive']??false){
+                $fp=$classification['false_positive'];
+                $additional.=sprintf("\n⚠️ False positive risk: %s (delta: %.1f%%, bid/ask: %.2f)",
+                    ucfirst($fp['risk_level']??'medium'),
+                    $fp['delta_pct']??0,
+                    $fp['bid_ask_ratio']??0
+                );
+            }
+            if($additional){
+                $baseMessage.=$additional;
+            }
+        }
+
+        return $baseMessage;
     }
 
     private function fresh(int $received): bool

@@ -1,0 +1,35 @@
+{
+  "buy_false_positive": {
+    "delta_threshold": 8.0,
+    "delta_high_risk": 15.0,
+    "bid_ask_ratio_threshold": 0.7,
+    "bid_ask_ratio_high_risk": 0.75,
+    "prev_delta_threshold": -10.0,
+    "lookback_bars": 3
+  },
+  "sell_false_positive": {
+    "delta_threshold": -8.0,
+    "delta_high_risk": -15.0,
+    "bid_ask_ratio_threshold": 0.9,
+    "bid_ask_ratio_high_risk": 0.85,
+    "prev_delta_threshold": 10.0,
+    "lookback_bars": 3
+  },
+  "time_context": {
+    "peak_hours": [
+      14,
+      23,
+      1,
+      2
+    ]
+  },
+  "price_context": {
+    "common_levels": [
+      4000,
+      4020,
+      4010,
+      4015,
+      3975
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "false_positive_detection": {
+    "buy": {
+      "delta_threshold": 8.0,
+      "delta_high_risk": 15.0,
+      "bid_ask_ratio_threshold": 0.7,
+      "bid_ask_ratio_high_risk": 0.75,
+      "prev_delta_threshold": -10.0,
+      "lookback_bars": 3
+    },
+    "sell": {
+      "delta_threshold": -8.0,
+      "delta_high_risk": -15.0,
+      "bid_ask_ratio_threshold": 0.9,
+      "bid_ask_ratio_high_risk": 0.85,
+      "prev_delta_threshold": 10.0,
+      "lookback_bars": 3
+    }
+  },
+  "zone_penetration_detection": {
+    "penetration_depth_threshold": 50.0,
+    "penetration_depth_high_conviction": 70.0,
+    "min_future_change": 1.0,
+    "lookahead_bars": 5,
+    "min_zone_wick_ratio": 0.2,
+    "min_departure_strength": 0.5
+  },
+  "combined_signal": {
+    "high_conviction": {
+      "requires_zone_penetration": true,
+      "requires_delta_confirmation": true,
+      "penetration_depth_min": 70.0,
+      "delta_alignment": "opposite_at_penetration"
+    },
+    "medium_conviction": {
+      "requires_zone_penetration": true,
+      "requires_delta_confirmation": false,
+      "penetration_depth_min": 50.0
+    },
+    "avoid_signals": {
+      "false_positive_delta_only": true,
+      "delta_threshold": 10.0
+    }
+  },
+  "time_context": {
+    "peak_false_positive_hours": [
+      14,
+      23,
+      1,
+      2
+    ]
+  },
+  "price_context": {
+    "common_false_positive_levels": [
+      4000,
+      4020,
+      4010,
+      4015,
+      3975
+    ]
+  }
+}
